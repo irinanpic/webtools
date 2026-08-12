@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="ja" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>画像クロッパー & リサイザー</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    /* Custom scrollbar & canvas styles */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1e293b;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+    .checkered-pattern {
+      background-color: #1e293b;
+      background-image: 
+        linear-gradient(45deg, #0f172a 25%, transparent 25%), 
+        linear-gradient(-45deg, #0f172a 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #0f172a 75%), 
+        linear-gradient(-45deg, transparent 75%, #0f172a 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased select-none">
+
+  <!-- Header -->
+  <header class="bg-slate-800/90 border-b border-slate-700/80 px-4 py-3 flex items-center justify-between shrink-0 shadow-md backdrop-blur z-20">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+        <i class="fa-solid font-bold fa-crop-simple text-lg"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold tracking-tight text-white leading-none">画像クロッパー & リサイザー</h1>
+        <p class="text-xs text-slate-400 mt-1">ドラッグ＆ドロップで高精度クロップ・サイズ変換</p>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="flex items-center space-x-2 bg-slate-900/60 p-1 rounded-xl border border-slate-700/60">
+      <button id="tabEditBtn" onclick="switchTab('edit')" class="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-2 bg-indigo-600 text-white shadow-sm">
+        <i class="fa-solid fa-sliders"></i>
+        <span>1. 範囲指定・編集</span>
+      </button>
+      <button id="tabPreviewBtn" onclick="switchTab('preview')" class="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-2 text-slate-400 hover:text-slate-200">
+        <i class="fa-solid fa-eye"></i>
+        <span>2. 切り取り結果・保存</span>
+      </button>
+    </div>
+
+    <!-- Top Action Buttons -->
+    <div class="flex items-center space-x-2">
+      <label class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 text-xs font-medium rounded-lg cursor-pointer transition flex items-center space-x-2 border border-slate-600">
+        <i class="fa-solid fa-folder-open"></i>
+        <span>画像を開く</span>
+        <input type="file" id="fileInput" accept="image/*" class="hidden" onchange="handleFileSelect(event)">
+      </label>
+      <button id="resetBtn" onclick="resetImageTransform()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs font-medium rounded-lg transition border border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed" disabled>
+        <i class="fa-solid fa-rotate-left mr-1"></i> リセット
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Application Body -->
+  <main class="flex-1 flex overflow-hidden relative">
+
+    <!-- DROP ZONE OVERLAY -->
+    <div id="dropZone" class="absolute inset-0 z-30 bg-slate-900/95 flex flex-col items-center justify-center p-6 text-center transition-all duration-200">
+      <div id="dropZoneContent" class="max-w-md w-full border-2 border-dashed border-slate-600 hover:border-indigo-500 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all bg-slate-800/40 hover:bg-slate-800/80 group">
+        <div class="w-16 h-16 rounded-full bg-slate-700/50 group-hover:bg-indigo-600/20 text-slate-400 group-hover:text-indigo-400 flex items-center justify-center text-2xl transition-all mb-4">
+          <i class="fa-solid fa-cloud-arrow-up"></i>
+        </div>
+        <h3 class="text-base font-bold text-slate-200 mb-1">ここに画像をドラッグ＆ドロップ</h3>
+        <p class="text-xs text-slate-400 mb-4">またはファイルを選択して読み込みます</p>
+        <button onclick="document.getElementById('fileInput').click()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition">
+          ファイルを選択する
+        </button>
+        <p class="text-[10px] text-slate-500 mt-4">対応形式: PNG, JPEG, WebP, GIF, BMP, SVGなど</p>
+      </div>
+    </div>
+
+    <!-- VIEW 1: EDIT & CROP SECTION -->
+    <section id="viewEdit" class="flex-1 flex flex-col md:flex-row overflow-hidden w-full">
+      
+      <!-- Left Sidebar Controls -->
+      <div class="w-full md:w-80 bg-slate-800/90 border-r border-slate-700/80 p-4 flex flex-col space-y-5 overflow-y-auto shrink-0 z-10">
+        
+        <!-- Preset Sizes -->
+        <div class="space-y-2">
+          <label class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+            <span><i class="fa-solid fa-table-cells mr-1 text-indigo-400"></i> プリセット (即座反映)</span>
+          </label>
+          <select id="presetSelect" onchange="applyPreset(this.value)" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <option value="custom">プリセットを選択...</option>
+            <optgroup label="正方形 (1:1)">
+              <option value="256x256">256 x 256 px (アイコン/アバター)</option>
+              <option value="512x512">512 x 512 px (標準アイコン)</option>
+              <option value="1024x1024">1024 x 1024 px (高画質正方形)</option>
+            </optgroup>
+            <optgroup label="標準アスペクト比">
+              <option value="1024x768">1024 x 768 px (4:3 標準)</option>
+              <option value="1280x720">1280 x 720 px (16:9 HD)</option>
+              <option value="1920x1080">1920 x 1080 px (16:9 Full HD)</option>
+            </optgroup>
+            <optgroup label="SNS / Web向け">
+              <option value="1200x630">1200 x 630 px (OGP / Webカード)</option>
+              <option value="1500x500">1500 x 500 px (X/Twitter ヘッダー)</option>
+              <option value="1080x1350">1080 x 1350 px (Instagram ポートレート)</option>
+            </optgroup>
+          </select>
+        </div>
+
+        <!-- Selected Region Dimensions (Interactive Input) -->
+        <div class="space-y-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/60">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-300"><i class="fa-solid fa-crop mr-1 text-indigo-400"></i> 選択領域サイズ (px)</span>
+            <label class="inline-flex items-center cursor-pointer text-xs text-slate-400 hover:text-slate-200">
+              <input type="checkbox" id="lockCropAspect" checked onchange="toggleLockCropAspect()" class="sr-only peer">
+              <div class="w-7 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+              <span class="ml-1.5 text-[11px]">縦横比固定</span>
+            </label>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 items-center">
+            <div>
+              <label class="text-[10px] text-slate-400 mb-1 block">幅 (Width)</label>
+              <input type="number" id="cropWidthInput" min="1" max="20000" value="512" oninput="onCropDimensionInput('w')" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono">
+            </div>
+            <div>
+              <label class="text-[10px] text-slate-400 mb-1 block">高さ (Height)</label>
+              <input type="number" id="cropHeightInput" min="1" max="20000" value="512" oninput="onCropDimensionInput('h')" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono">
+            </div>
+          </div>
+          <p class="text-[10px] text-slate-400 leading-tight">※ マウスでの切り取り範囲操作に合わせて数値が自動追従します（左上基準）。</p>
+        </div>
+
+        <!-- Image Transformations (Arbitrary Rotation Slider + Quick Buttons & Flip) -->
+        <div class="space-y-3">
+          <label class="text-xs font-bold text-slate-300 uppercase tracking-wider block"><i class="fa-solid fa-arrows-rotate mr-1 text-indigo-400"></i> 回転・反転</label>
+          
+          <!-- Arbitrary Rotation Angle Slider -->
+          <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-2">
+            <div class="flex justify-between items-center text-xs">
+              <span class="font-medium text-slate-300">角度指定:</span>
+              <div class="flex items-center space-x-1">
+                <input type="number" id="angleDegreeInput" min="0" max="360" value="0" onchange="setRotationDegree(this.value)" class="w-14 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-right font-mono text-xs text-indigo-400 font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                <span class="text-slate-400">°</span>
+              </div>
+            </div>
+            <input type="range" id="angleSlider" min="0" max="360" value="0" step="0.5" oninput="onAngleSliderInput(this.value)" class="w-full accent-indigo-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer">
+            <div class="flex justify-between text-[9px] text-slate-500 font-mono">
+              <span>0°</span>
+              <span>90°</span>
+              <span>180°</span>
+              <span>270°</span>
+              <span>360°</span>
+            </div>
+          </div>
+
+          <!-- Quick Rotate 90 deg and Flip Buttons -->
+          <div class="grid grid-cols-4 gap-1.5">
+            <button onclick="rotateImageStep(-90)" title="反時計回りに90度回転" class="py-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 rounded-lg text-xs transition flex flex-col items-center justify-center space-y-1">
+              <i class="fa-solid fa-rotate-left"></i>
+              <span class="text-[9px]">左90°</span>
+            </button>
+            <button onclick="rotateImageStep(90)" title="時計回りに90度回転" class="py-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 rounded-lg text-xs transition flex flex-col items-center justify-center space-y-1">
+              <i class="fa-solid fa-rotate-right"></i>
+              <span class="text-[9px]">右90°</span>
+            </button>
+            <button onclick="flipImage('h')" title="左右反転" class="py-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 rounded-lg text-xs transition flex flex-col items-center justify-center space-y-1">
+              <i class="fa-solid fa-arrows-left-right"></i>
+              <span class="text-[9px]">左右反転</span>
+            </button>
+            <button onclick="flipImage('v')" title="上下反転" class="py-2 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 rounded-lg text-xs transition flex flex-col items-center justify-center space-y-1">
+              <i class="fa-solid fa-arrows-up-down"></i>
+              <span class="text-[9px]">上下反転</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Selected Region & Original Info -->
+        <div class="bg-slate-900/40 p-3 rounded-xl border border-slate-700/40 space-y-1 text-xs">
+          <div class="flex justify-between text-slate-400">
+            <span>展開画像サイズ:</span>
+            <span id="origImageInfo" class="font-mono text-slate-200">0 x 0 px</span>
+          </div>
+        </div>
+
+        <!-- Action to Proceed -->
+        <div class="mt-auto pt-2">
+          <button onclick="switchTab('preview')" class="w-full py-3 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition flex items-center justify-center space-x-2">
+            <span>切り取り結果を確認する</span>
+            <i class="fa-solid fa-arrow-right"></i>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Interactive Canvas Editing Workspace -->
+      <div id="canvasContainer" class="flex-1 relative checkered-pattern flex items-center justify-center overflow-hidden p-4">
+        <div id="cropWrapper" class="relative shadow-2xl touch-none">
+          <canvas id="cropCanvas" class="block rounded"></canvas>
+        </div>
+      </div>
+
+    </section>
+
+
+    <!-- VIEW 2: RESULT & SAVE SECTION -->
+    <section id="viewPreview" class="flex-1 flex flex-col md:flex-row overflow-hidden w-full hidden">
+      
+      <!-- Left Export Controls -->
+      <div class="w-full md:w-80 bg-slate-800/90 border-r border-slate-700/80 p-4 flex flex-col space-y-5 overflow-y-auto shrink-0 z-10">
+        
+        <div class="border-b border-slate-700 pb-3">
+          <h2 class="text-sm font-bold text-white flex items-center">
+            <i class="fa-solid fa-file-export mr-2 text-indigo-400"></i>
+            切り取り結果 & 保存設定
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">出力解像度やフォーマットを設定して保存できます。</p>
+        </div>
+
+        <!-- Custom Output Dimensions Controls with "Do Not Resize" Switch -->
+        <div class="space-y-3 bg-slate-900/60 p-3 rounded-xl border border-slate-700/60">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-slate-300"><i class="fa-solid fa-expand mr-1 text-indigo-400"></i> 出力解像度 (px)</span>
+          </div>
+
+          <!-- "Do Not Resize" Toggle Switch -->
+          <label class="flex items-center justify-between p-2 bg-slate-800/80 rounded-lg border border-slate-700/80 cursor-pointer">
+            <span class="text-xs text-slate-200 font-medium">サイズを変更しない (等倍)</span>
+            <div class="relative inline-flex items-center">
+              <input type="checkbox" id="keepOriginalSizeToggle" onchange="toggleKeepOriginalSize(this.checked)" class="sr-only peer">
+              <div class="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+            </div>
+          </label>
+
+          <!-- Output Dimension Fields Container -->
+          <div id="outputDimensionFields" class="space-y-3">
+            <!-- Preset Selector for Output -->
+            <div>
+              <label class="text-[10px] text-slate-400 mb-1 block">出力プリセット</label>
+              <select id="outPresetSelect" onchange="applyOutputPreset(this.value)" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="custom">プリセットを選択...</option>
+                <optgroup label="正方形 (1:1)">
+                  <option value="256x256">256 x 256 px (アイコン/アバター)</option>
+                  <option value="512x512">512 x 512 px (標準アイコン)</option>
+                  <option value="1024x1024">1024 x 1024 px (高画質正方形)</option>
+                </optgroup>
+                <optgroup label="標準アスペクト比">
+                  <option value="1024x768">1024 x 768 px (4:3 標準)</option>
+                  <option value="1280x720">1280 x 720 px (16:9 HD)</option>
+                  <option value="1920x1080">1920 x 1080 px (16:9 Full HD)</option>
+                </optgroup>
+                <optgroup label="SNS / Web向け">
+                  <option value="1200x630">1200 x 630 px (OGP / Webカード)</option>
+                  <option value="1500x500">1500 x 500 px (X/Twitter ヘッダー)</option>
+                  <option value="1080x1350">1080 x 1350 px (Instagram ポートレート)</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] text-slate-400">拡大・縮小サイズ指定</span>
+              <label class="inline-flex items-center cursor-pointer text-xs text-slate-400 hover:text-slate-200">
+                <input type="checkbox" id="lockOutAspect" checked onchange="toggleLockOutAspect()" class="sr-only peer">
+                <div class="w-6 h-3 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[1px] after:left-[1px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-2.5 after:w-2.5 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+                <span class="ml-1 text-[10px]">比率維持</span>
+              </label>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2 items-center">
+              <div>
+                <label class="text-[10px] text-slate-400 mb-1 block">幅 (Width)</label>
+                <input type="number" id="outWidth" min="1" max="20000" value="512" oninput="onOutDimensionInput('w')" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono">
+              </div>
+              <div>
+                <label class="text-[10px] text-slate-400 mb-1 block">高さ (Height)</label>
+                <input type="number" id="outHeight" min="1" max="20000" value="512" oninput="onOutDimensionInput('h')" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Format Options -->
+        <div class="space-y-2">
+          <label class="text-xs font-bold text-slate-300 uppercase tracking-wider">保存フォーマット</label>
+          <div class="grid grid-cols-3 gap-2">
+            <label class="cursor-pointer">
+              <input type="radio" name="exportFormat" value="png" onchange="updateResultPreview()" class="peer sr-only">
+              <div class="py-2 text-center text-xs font-semibold rounded-lg bg-slate-900 border border-slate-700 text-slate-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-500 transition">
+                PNG
+              </div>
+            </label>
+            <label class="cursor-pointer">
+              <input type="radio" name="exportFormat" value="jpeg" checked onchange="updateResultPreview()" class="peer sr-only">
+              <div class="py-2 text-center text-xs font-semibold rounded-lg bg-slate-900 border border-slate-700 text-slate-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-500 transition">
+                JPEG
+              </div>
+            </label>
+            <label class="cursor-pointer">
+              <input type="radio" name="exportFormat" value="webp" onchange="updateResultPreview()" class="peer sr-only">
+              <div class="py-2 text-center text-xs font-semibold rounded-lg bg-slate-900 border border-slate-700 text-slate-300 peer-checked:bg-indigo-600 peer-checked:text-white peer-checked:border-indigo-500 transition">
+                WebP
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Quality Slider (JPEG/WebP) -->
+        <div id="qualityContainer" class="space-y-2 bg-slate-900/60 p-3 rounded-xl border border-slate-700/60">
+          <div class="flex justify-between items-center text-xs">
+            <label for="qualitySlider" class="font-semibold text-slate-300">画質 (品質):</label>
+            <span id="qualityVal" class="font-mono text-indigo-400 font-bold">92%</span>
+          </div>
+          <input type="range" id="qualitySlider" min="1" max="100" value="92" oninput="onQualityInput(this.value)" class="w-full accent-indigo-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer">
+          <div class="flex justify-between text-[10px] text-slate-500">
+            <span>小容量</span>
+            <span>高画質 (100%)</span>
+          </div>
+        </div>
+
+        <!-- Output Details -->
+        <div class="space-y-2 bg-slate-900/40 p-3 rounded-xl border border-slate-700/40 text-xs">
+          <div class="flex justify-between text-slate-400">
+            <span>最終出力サイズ:</span>
+            <span id="resultDimensions" class="font-mono text-slate-200">0 x 0 px</span>
+          </div>
+          <div class="flex justify-between text-slate-400">
+            <span>推定ファイルサイズ:</span>
+            <span id="resultFileSize" class="font-mono text-emerald-400 font-bold">0 KB</span>
+          </div>
+        </div>
+
+        <!-- File Name Input -->
+        <div class="space-y-1">
+          <label class="text-xs font-semibold text-slate-300">ファイル名</label>
+          <div class="flex items-center">
+            <input type="text" id="fileNameInput" value="cropped-image" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <span id="fileExtLabel" class="ml-2 text-xs font-mono text-slate-400">.jpg</span>
+          </div>
+        </div>
+
+        <!-- Download Button -->
+        <div class="mt-auto pt-2 space-y-2">
+          <button onclick="downloadImage()" class="w-full py-3 bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-white font-bold text-xs rounded-xl shadow-lg shadow-emerald-600/20 transition flex items-center justify-center space-x-2">
+            <i class="fa-solid fa-download text-sm"></i>
+            <span>画像をダウンロード保存</span>
+          </button>
+          
+          <button onclick="switchTab('edit')" class="w-full py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg transition flex items-center justify-center space-x-1">
+            <i class="fa-solid fa-chevron-left text-[10px]"></i>
+            <span>範囲指定に戻る</span>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Result Canvas Workspace -->
+      <div class="flex-1 relative checkered-pattern flex items-center justify-center overflow-auto p-6">
+        <div class="flex flex-col items-center space-y-3 max-w-full max-h-full">
+          <div id="resultPreviewContainer" class="p-2 bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl max-w-full max-h-full overflow-hidden flex items-center justify-center">
+            <img id="resultImage" class="max-w-full max-h-[70vh] object-contain rounded-lg block shadow" alt="切り取り結果プレビュー">
+          </div>
+          <span class="text-xs text-slate-400 bg-slate-800/80 px-3 py-1 rounded-full border border-slate-700/60">
+            <i class="fa-solid fa-circle-check text-emerald-400 mr-1"></i> 切り取り完了
+          </span>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <script>
+    /**
+     * Application State Management
+     */
+    const state = {
+      originalImage: null,  // Loaded HTMLImageElement
+      fileName: 'cropped-image',
+      
+      // Image Transformations
+      rotationDegree: 0,    // Arbitrary rotation 0-360 deg
+      flipH: false,
+      flipV: false,
+
+      // Rendered base image canvas (transformed image)
+      transformedCanvas: null,
+
+      // Crop Box relative to transformedCanvas coordinates
+      cropBox: {
+        x: 0,
+        y: 0,
+        w: 512,
+        h: 512
+      },
+
+      // Aspect lock for crop selection in Edit tab
+      lockCropAspect: true,
+
+      // Tab 2 Output Settings
+      keepOriginalSize: false,
+      outWidth: 512,
+      outHeight: 512,
+      lockOutAspect: true,
+
+      // UI Drag state
+      isDragging: false,
+      dragMode: null, // 'move' or handle position like 'nw', 'ne', 'se', 'sw', 'n', 's', 'e', 'w'
+      dragStartPos: { x: 0, y: 0 },
+      cropStartBox: null,
+
+      // Scale ratio between display canvas and internal transformedCanvas
+      displayScale: 1.0,
+
+      // Result Data
+      resultBlob: null,
+      resultDataUrl: ''
+    };
+
+    // DOM Elements
+    const dropZone = document.getElementById('dropZone');
+    const cropCanvas = document.getElementById('cropCanvas');
+    const cropCtx = cropCanvas.getContext('2d');
+    const resetBtn = document.getElementById('resetBtn');
+
+    // Setup Event Handlers on DOM Ready
+    window.addEventListener('DOMContentLoaded', () => {
+      let dragCounter = 0;
+
+      // Prevent default browser behavior for drag & drop across the window
+      ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        window.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }, false);
+      });
+
+      // Show dropzone overlay when dragging files into the window
+      window.addEventListener('dragenter', (e) => {
+        dragCounter++;
+        if (e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+          dropZone.classList.remove('hidden');
+        }
+      });
+
+      // Hide dropzone overlay when dragging leaves the window
+      window.addEventListener('dragleave', () => {
+        dragCounter--;
+        if (dragCounter <= 0) {
+          dragCounter = 0;
+          if (state.originalImage) {
+            dropZone.classList.add('hidden');
+          }
+        }
+      });
+
+      // Handle drop anywhere in the window
+      window.addEventListener('drop', (e) => {
+        dragCounter = 0;
+        
+        const dt = e.dataTransfer;
+        if (dt && dt.files && dt.files.length > 0) {
+          loadImageFile(dt.files[0]);
+        } else if (state.originalImage) {
+          dropZone.classList.add('hidden');
+        }
+      });
+
+      window.addEventListener('resize', () => {
+        if (state.originalImage) {
+          renderCropCanvas();
+        }
+      });
+
+      // Canvas Drag/Touch interaction
+      cropCanvas.addEventListener('mousedown', onPointerDown);
+      window.addEventListener('mousemove', onPointerMove);
+      window.addEventListener('mouseup', onPointerUp);
+
+      cropCanvas.addEventListener('touchstart', onPointerDown, { passive: false });
+      window.addEventListener('touchmove', onPointerMove, { passive: false });
+      window.addEventListener('touchend', onPointerUp);
+    });
+
+    /**
+     * File Loading Functions
+     */
+    function handleFileSelect(e) {
+      if (e.target.files && e.target.files[0]) {
+        loadImageFile(e.target.files[0]);
+      }
+    }
+
+    function loadImageFile(file) {
+      if (!file.type.startsWith('image/')) {
+        alert('画像ファイルを選択してください。');
+        return;
+      }
+
+      state.fileName = file.name.substring(0, file.name.lastIndexOf('.')) || 'cropped-image';
+      document.getElementById('fileNameInput').value = state.fileName;
+      document.getElementById('presetSelect').value = 'custom';
+      document.getElementById('outPresetSelect').value = 'custom';
+
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const img = new Image();
+        img.onload = () => {
+          state.originalImage = img;
+          resetImageTransform(true); // 変換キャンバスのクリア・再構成および初期描画を即座に実行
+          dropZone.classList.add('hidden');
+          resetBtn.disabled = false;
+
+          // プレビュー画面を表示中の場合は結果表示も即時更新
+          if (!document.getElementById('viewPreview').classList.contains('hidden')) {
+            updateResultPreview();
+          }
+        };
+        img.src = evt.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    /**
+     * Reset Transformations
+     */
+    function resetImageTransform(render = true) {
+      state.rotationDegree = 0;
+      state.flipH = false;
+      state.flipV = false;
+      
+      document.getElementById('angleSlider').value = 0;
+      document.getElementById('angleDegreeInput').value = 0;
+
+      // 新しい画像用の変換キャンバスを確実に作成
+      updateTransformedCanvas();
+
+      if (render && state.originalImage) {
+        initCropBox();
+        renderCropCanvas();
+      }
+    }
+
+    /**
+     * Rotation Controls Handling
+     */
+    function onAngleSliderInput(val) {
+      const deg = parseFloat(val) || 0;
+      document.getElementById('angleDegreeInput').value = deg.toFixed(1).replace(/\.0$/, '');
+      setRotationDegree(deg);
+    }
+
+    function setRotationDegree(degVal) {
+      let deg = (parseFloat(degVal) || 0) % 360;
+      if (deg < 0) deg += 360;
+      
+      state.rotationDegree = deg;
+      document.getElementById('angleSlider').value = deg;
+      document.getElementById('angleDegreeInput').value = deg.toFixed(1).replace(/\.0$/, '');
+
+      updateTransformedCanvas();
+      clampCropBoxToBounds();
+      renderCropCanvas();
+    }
+
+    function rotateImageStep(stepDeg) {
+      let newDeg = (state.rotationDegree + stepDeg) % 360;
+      if (newDeg < 0) newDeg += 360;
+      setRotationDegree(newDeg);
+    }
+
+    function flipImage(dir) {
+      if (!state.originalImage) return;
+      if (dir === 'h') state.flipH = !state.flipH;
+      if (dir === 'v') state.flipV = !state.flipV;
+      
+      updateTransformedCanvas();
+      renderCropCanvas();
+    }
+
+    /**
+     * Re-generate transformedCanvas based on arbitrary rotation & flip
+     */
+    function updateTransformedCanvas() {
+      if (!state.originalImage) return;
+
+      const img = state.originalImage;
+      const rad = (state.rotationDegree * Math.PI) / 180;
+
+      // 回転後のバウンディングボックスサイズを計算（画像全体が収まるようにキャンバスを拡大）
+      const sin = Math.abs(Math.sin(rad));
+      const cos = Math.abs(Math.cos(rad));
+      const targetW = Math.ceil(img.width * cos + img.height * sin);
+      const targetH = Math.ceil(img.width * sin + img.height * cos);
+
+      const canvas = document.createElement('canvas');
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext('2d');
+
+      ctx.save();
+      // Move origin to canvas center
+      ctx.translate(targetW / 2, targetH / 2);
+      
+      // Rotate
+      ctx.rotate(rad);
+      
+      // Flip
+      ctx.scale(state.flipH ? -1 : 1, state.flipV ? -1 : 1);
+
+      // Draw original image centered
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      ctx.restore();
+
+      state.transformedCanvas = canvas;
+      document.getElementById('origImageInfo').textContent = `${targetW} x ${targetH} px`;
+    }
+
+    /**
+     * Initial Crop Box setup
+     */
+    function initCropBox() {
+      if (!state.transformedCanvas) updateTransformedCanvas();
+      const tc = state.transformedCanvas;
+      if (!tc) return;
+
+      const imgW = tc.width;
+      const imgH = tc.height;
+
+      const cropW = Math.min(imgW, 512);
+      const cropH = Math.min(imgH, 512);
+
+      state.cropBox = {
+        x: Math.max(0, (imgW - cropW) / 2),
+        y: Math.max(0, (imgH - cropH) / 2),
+        w: cropW,
+        h: cropH
+      };
+
+      updateCropInputUI();
+    }
+
+    /**
+     * Apply Preset Directly (Top-Left Anchor)
+     */
+    function applyPreset(presetVal) {
+      if (presetVal === 'custom' || !presetVal) return;
+
+      const [w, h] = presetVal.split('x').map(Number);
+      if (w && h && state.transformedCanvas) {
+        const tc = state.transformedCanvas;
+
+        // Apply width & height anchored at current Top-Left (x, y)
+        let newX = state.cropBox.x;
+        let newY = state.cropBox.y;
+        let newW = w;
+        let newH = h;
+
+        // If target preset size is larger than image bounds, scale down preserving ratio
+        if (newW > tc.width || newH > tc.height) {
+          const ratio = Math.min(tc.width / newW, tc.height / newH);
+          newW = Math.round(newW * ratio);
+          newH = Math.round(newH * ratio);
+        }
+
+        // Keep inside canvas bounds with Top-Left precedence
+        if (newX + newW > tc.width) newX = Math.max(0, tc.width - newW);
+        if (newY + newH > tc.height) newY = Math.max(0, tc.height - newH);
+
+        state.cropBox = { x: newX, y: newY, w: newW, h: newH };
+
+        updateCropInputUI();
+        renderCropCanvas();
+      }
+    }
+
+    /**
+     * Crop Dimension Input Handlers (Edit Tab)
+     */
+    function toggleLockCropAspect() {
+      state.lockCropAspect = document.getElementById('lockCropAspect').checked;
+    }
+
+    function onCropDimensionInput(changed) {
+      document.getElementById('presetSelect').value = 'custom';
+      
+      let w = parseInt(document.getElementById('cropWidthInput').value) || 1;
+      let h = parseInt(document.getElementById('cropHeightInput').value) || 1;
+      const tc = state.transformedCanvas;
+      if (!tc) return;
+
+      if (state.lockCropAspect) {
+        const currentAspect = state.cropBox.w / state.cropBox.h;
+        if (changed === 'w') {
+          h = Math.round(w / currentAspect);
+          document.getElementById('cropHeightInput').value = h;
+        } else {
+          w = Math.round(h * currentAspect);
+          document.getElementById('cropWidthInput').value = w;
+        }
+      }
+
+      // Top-Left anchored sizing
+      let newX = state.cropBox.x;
+      let newY = state.cropBox.y;
+
+      // Clamp dimensions to image size
+      w = Math.min(w, tc.width);
+      h = Math.min(h, tc.height);
+
+      if (newX + w > tc.width) newX = Math.max(0, tc.width - w);
+      if (newY + h > tc.height) newY = Math.max(0, tc.height - h);
+
+      state.cropBox = { x: newX, y: newY, w: w, h: h };
+      renderCropCanvas();
+    }
+
+    function updateCropInputUI() {
+      const w = Math.round(state.cropBox.w);
+      const h = Math.round(state.cropBox.h);
+      
+      document.getElementById('cropWidthInput').value = w;
+      document.getElementById('cropHeightInput').value = h;
+
+      // Also update default output dimensions if not custom modified
+      if (!state.keepOriginalSize) {
+        state.outWidth = w;
+        state.outHeight = h;
+        document.getElementById('outWidth').value = w;
+        document.getElementById('outHeight').value = h;
+      }
+    }
+
+    function clampCropBoxToBounds() {
+      if (!state.transformedCanvas) return;
+      const tc = state.transformedCanvas;
+      let { x, y, w, h } = state.cropBox;
+
+      if (w > tc.width) w = tc.width;
+      if (h > tc.height) h = tc.height;
+
+      if (x + w > tc.width) x = tc.width - w;
+      if (y + h > tc.height) y = tc.height - h;
+      if (x < 0) x = 0;
+      if (y < 0) y = 0;
+
+      state.cropBox = { x, y, w, h };
+      updateCropInputUI();
+    }
+
+    /**
+     * Main Canvas Render Loop
+     */
+    function renderCropCanvas() {
+      if (!state.transformedCanvas) return;
+
+      const tc = state.transformedCanvas;
+      const container = document.getElementById('canvasContainer');
+
+      const maxDisplayW = container.clientWidth - 40;
+      const maxDisplayH = container.clientHeight - 40;
+
+      const scaleW = maxDisplayW / tc.width;
+      const scaleH = maxDisplayH / tc.height;
+      state.displayScale = Math.min(scaleW, scaleH, 1.0);
+
+      const displayW = Math.floor(tc.width * state.displayScale);
+      const displayH = Math.floor(tc.height * state.displayScale);
+
+      cropCanvas.width = displayW;
+      cropCanvas.height = displayH;
+
+      // 1. Draw Transformed Base Image
+      cropCtx.clearRect(0, 0, displayW, displayH);
+      cropCtx.drawImage(tc, 0, 0, displayW, displayH);
+
+      // 2. Draw Semi-transparent Dark Overlay
+      cropCtx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+      cropCtx.fillRect(0, 0, displayW, displayH);
+
+      // 3. Clear Overlay for Selected Crop Region
+      const cb = state.cropBox;
+      const cx = cb.x * state.displayScale;
+      const cy = cb.y * state.displayScale;
+      const cw = cb.w * state.displayScale;
+      const ch = cb.h * state.displayScale;
+
+      cropCtx.save();
+      cropCtx.beginPath();
+      cropCtx.rect(cx, cy, cw, ch);
+      cropCtx.clip();
+
+      // Redraw clear unmasked image section
+      cropCtx.drawImage(tc, 0, 0, displayW, displayH);
+      cropCtx.restore();
+
+      // 4. Draw Crop Outline & Rule of Thirds
+      cropCtx.strokeStyle = '#6366f1'; // Indigo-500
+      cropCtx.lineWidth = 2;
+      cropCtx.strokeRect(cx, cy, cw, ch);
+
+      // Grid Lines
+      cropCtx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+      cropCtx.lineWidth = 1;
+      cropCtx.beginPath();
+      cropCtx.moveTo(cx + cw / 3, cy);
+      cropCtx.lineTo(cx + cw / 3, cy + ch);
+      cropCtx.moveTo(cx + (cw * 2) / 3, cy);
+      cropCtx.lineTo(cx + (cw * 2) / 3, cy + ch);
+      cropCtx.moveTo(cx, cy + ch / 3);
+      cropCtx.lineTo(cx + cw, cy + ch / 3);
+      cropCtx.moveTo(cx, cy + (ch * 2) / 3);
+      cropCtx.lineTo(cx + cw, cy + (ch * 2) / 3);
+      cropCtx.stroke();
+
+      // 5. Render Handles
+      drawHandles(cx, cy, cw, ch);
+    }
+
+    /**
+     * Draw 8 Resize Handles
+     */
+    function drawHandles(x, y, w, h) {
+      const handleRadius = 5;
+      cropCtx.fillStyle = '#ffffff';
+      cropCtx.strokeStyle = '#4f46e5';
+      cropCtx.lineWidth = 2;
+
+      const handles = [
+        { x: x, y: y },                 // nw
+        { x: x + w / 2, y: y },         // n
+        { x: x + w, y: y },             // ne
+        { x: x + w, y: y + h / 2 },     // e
+        { x: x + w, y: y + h },         // se
+        { x: x + w / 2, y: y + h },     // s
+        { x: x, y: y + h },             // sw
+        { x: x, y: y + h / 2 }          // w
+      ];
+
+      handles.forEach(pt => {
+        cropCtx.beginPath();
+        cropCtx.arc(pt.x, pt.y, handleRadius, 0, Math.PI * 2);
+        cropCtx.fill();
+        cropCtx.stroke();
+      });
+    }
+
+    /**
+     * Mouse & Touch Pointer Interactions
+     */
+    function getPointerPos(e) {
+      const rect = cropCanvas.getBoundingClientRect();
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      return {
+        x: (clientX - rect.left) / state.displayScale,
+        y: (clientY - rect.top) / state.displayScale
+      };
+    }
+
+    function getDragMode(pos) {
+      const cb = state.cropBox;
+      const handleThreshold = 14 / state.displayScale;
+
+      const x = pos.x;
+      const y = pos.y;
+
+      // Corners
+      if (Math.hypot(x - cb.x, y - cb.y) < handleThreshold) return 'nw';
+      if (Math.hypot(x - (cb.x + cb.w), y - cb.y) < handleThreshold) return 'ne';
+      if (Math.hypot(x - (cb.x + cb.w), y - (cb.y + cb.h)) < handleThreshold) return 'se';
+      if (Math.hypot(x - cb.x, y - (cb.y + cb.h)) < handleThreshold) return 'sw';
+
+      // Edges (enabled when lockAspect is false)
+      if (!state.lockCropAspect) {
+        if (Math.abs(y - cb.y) < handleThreshold && x >= cb.x && x <= cb.x + cb.w) return 'n';
+        if (Math.abs(x - (cb.x + cb.w)) < handleThreshold && y >= cb.y && y <= cb.y + cb.h) return 'e';
+        if (Math.abs(y - (cb.y + cb.h)) < handleThreshold && x >= cb.x && x <= cb.x + cb.w) return 's';
+        if (Math.abs(x - cb.x) < handleThreshold && y >= cb.y && y <= cb.y + cb.h) return 'w';
+      }
+
+      // Move Mode inside box
+      if (x >= cb.x && x <= cb.x + cb.w && y >= cb.y && y <= cb.y + cb.h) {
+        return 'move';
+      }
+
+      return null;
+    }
+
+    function onPointerDown(e) {
+      if (!state.transformedCanvas) return;
+      const pos = getPointerPos(e);
+      const mode = getDragMode(pos);
+
+      if (mode) {
+        state.isDragging = true;
+        state.dragMode = mode;
+        state.dragStartPos = pos;
+        state.cropStartBox = { ...state.cropBox };
+        e.preventDefault();
+      }
+    }
+
+    function onPointerMove(e) {
+      if (!state.transformedCanvas) return;
+      const pos = getPointerPos(e);
+
+      if (!state.isDragging) {
+        const mode = getDragMode(pos);
+        if (mode === 'move') cropCanvas.style.cursor = 'move';
+        else if (mode === 'nw' || mode === 'se') cropCanvas.style.cursor = 'nwse-resize';
+        else if (mode === 'ne' || mode === 'sw') cropCanvas.style.cursor = 'nesw-resize';
+        else if (mode === 'n' || mode === 's') cropCanvas.style.cursor = 'ns-resize';
+        else if (mode === 'e' || mode === 'w') cropCanvas.style.cursor = 'ew-resize';
+        else cropCanvas.style.cursor = 'default';
+        return;
+      }
+
+      const dx = pos.x - state.dragStartPos.x;
+      const dy = pos.y - state.dragStartPos.y;
+      const sb = state.cropStartBox;
+      const tc = state.transformedCanvas;
+      const minSize = 20;
+
+      let newX = sb.x;
+      let newY = sb.y;
+      let newW = sb.w;
+      let newH = sb.h;
+
+      if (state.dragMode === 'move') {
+        newX = Math.max(0, Math.min(tc.width - sb.w, sb.x + dx));
+        newY = Math.max(0, Math.min(tc.height - sb.h, sb.y + dy));
+      } else {
+        const aspect = state.lockCropAspect ? (sb.w / sb.h) : null;
+
+        if (state.dragMode.includes('e')) {
+          newW = Math.max(minSize, Math.min(tc.width - sb.x, sb.w + dx));
+          if (aspect) newH = newW / aspect;
+        }
+        if (state.dragMode.includes('s')) {
+          newH = Math.max(minSize, Math.min(tc.height - sb.y, sb.h + dy));
+          if (aspect) newW = newH * aspect;
+        }
+        if (state.dragMode.includes('w')) {
+          const maxDx = sb.w - minSize;
+          const actualDx = Math.min(maxDx, Math.max(-sb.x, dx));
+          newW = sb.w - actualDx;
+          newX = sb.x + actualDx;
+          if (aspect) newH = newW / aspect;
+        }
+        if (state.dragMode.includes('n')) {
+          const maxDy = sb.h - minSize;
+          const actualDy = Math.min(maxDy, Math.max(-sb.y, dy));
+          newH = sb.h - actualDy;
+          newY = sb.y + actualDy;
+          if (aspect) newW = newH * aspect;
+        }
+
+        if (newX < 0) newX = 0;
+        if (newY < 0) newY = 0;
+        if (newX + newW > tc.width) { newW = tc.width - newX; if (aspect) newH = newW / aspect; }
+        if (newY + newH > tc.height) { newH = tc.height - newY; if (aspect) newW = newH * aspect; }
+      }
+
+      state.cropBox = { x: newX, y: newY, w: newW, h: newH };
+      
+      // Realtime synchronization with UI inputs
+      updateCropInputUI();
+      renderCropCanvas();
+      e.preventDefault();
+    }
+
+    function onPointerUp() {
+      if (state.isDragging) {
+        state.isDragging = false;
+        state.dragMode = null;
+      }
+    }
+
+    /**
+     * Tab Switch Handler
+     */
+    function switchTab(tab) {
+      const viewEdit = document.getElementById('viewEdit');
+      const viewPreview = document.getElementById('viewPreview');
+      const tabEditBtn = document.getElementById('tabEditBtn');
+      const tabPreviewBtn = document.getElementById('tabPreviewBtn');
+
+      if (tab === 'edit') {
+        viewEdit.classList.remove('hidden');
+        viewPreview.classList.add('hidden');
+
+        tabEditBtn.className = "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-2 bg-indigo-600 text-white shadow-sm";
+        tabPreviewBtn.className = "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-2 text-slate-400 hover:text-slate-200";
+
+        renderCropCanvas();
+      } else {
+        if (!state.originalImage) {
+          alert('画像が読み込まれていません。先に画像を選択してください。');
+          return;
+        }
+
+        viewEdit.classList.add('hidden');
+        viewPreview.classList.remove('hidden');
+
+        tabPreviewBtn.className = "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-2 bg-indigo-600 text-white shadow-sm";
+        tabEditBtn.className = "px-4 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center space-x-2 text-slate-400 hover:text-slate-200";
+
+        updateResultPreview();
+      }
+    }
+
+    /**
+     * Tab 2: Output Resolution Settings Logic
+     */
+    function toggleKeepOriginalSize(isKeep) {
+      state.keepOriginalSize = isKeep;
+      const fields = document.getElementById('outputDimensionFields');
+
+      if (isKeep) {
+        fields.classList.add('opacity-40', 'pointer-events-none');
+      } else {
+        fields.classList.remove('opacity-40', 'pointer-events-none');
+      }
+
+      updateResultPreview();
+    }
+
+    function toggleLockOutAspect() {
+      state.lockOutAspect = document.getElementById('lockOutAspect').checked;
+    }
+
+    /**
+     * Output Preset Application
+     */
+    function applyOutputPreset(presetVal) {
+      if (presetVal === 'custom' || !presetVal) return;
+
+      const [w, h] = presetVal.split('x').map(Number);
+      if (w && h) {
+        // If "Keep Original Size" toggle is ON, automatically disable it so custom dimensions apply
+        if (state.keepOriginalSize) {
+          state.keepOriginalSize = false;
+          document.getElementById('keepOriginalSizeToggle').checked = false;
+          document.getElementById('outputDimensionFields').classList.remove('opacity-40', 'pointer-events-none');
+        }
+
+        state.outWidth = w;
+        state.outHeight = h;
+        document.getElementById('outWidth').value = w;
+        document.getElementById('outHeight').value = h;
+
+        updateResultPreview();
+      }
+    }
+
+    function onOutDimensionInput(changed) {
+      document.getElementById('outPresetSelect').value = 'custom';
+      let w = parseInt(document.getElementById('outWidth').value) || 1;
+      let h = parseInt(document.getElementById('outHeight').value) || 1;
+
+      if (state.lockOutAspect) {
+        const cropAspect = state.cropBox.w / state.cropBox.h;
+        if (changed === 'w') {
+          h = Math.round(w / cropAspect);
+          document.getElementById('outHeight').value = h;
+        } else {
+          w = Math.round(h * cropAspect);
+          document.getElementById('outWidth').value = w;
+        }
+      }
+
+      state.outWidth = w;
+      state.outHeight = h;
+      updateResultPreview();
+    }
+
+    function onQualityInput(val) {
+      document.getElementById('qualityVal').textContent = `${val}%`;
+      updateResultPreview();
+    }
+
+    /**
+     * Generate & Render Final Output Image
+     */
+    function updateResultPreview() {
+      if (!state.transformedCanvas) return;
+
+      const format = document.querySelector('input[name="exportFormat"]:checked').value;
+      const qualityContainer = document.getElementById('qualityContainer');
+      const fileExtLabel = document.getElementById('fileExtLabel');
+
+      if (format === 'png') {
+        qualityContainer.classList.add('opacity-40', 'pointer-events-none');
+        fileExtLabel.textContent = '.png';
+      } else {
+        qualityContainer.classList.remove('opacity-40', 'pointer-events-none');
+        fileExtLabel.textContent = format === 'jpeg' ? '.jpg' : '.webp';
+      }
+
+      // Determine Target Render Dimensions
+      let targetW, targetH;
+      if (state.keepOriginalSize) {
+        targetW = Math.round(state.cropBox.w);
+        targetH = Math.round(state.cropBox.h);
+      } else {
+        targetW = state.outWidth;
+        targetH = state.outHeight;
+      }
+
+      // Create Output Canvas for Export
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = targetW;
+      outCanvas.height = targetH;
+      const outCtx = outCanvas.getContext('2d');
+
+      outCtx.imageSmoothingEnabled = true;
+      outCtx.imageSmoothingQuality = 'high';
+
+      const cb = state.cropBox;
+      outCtx.drawImage(
+        state.transformedCanvas,
+        cb.x, cb.y, cb.w, cb.h,   // Source Crop coordinates
+        0, 0, targetW, targetH    // Target output dimensions
+      );
+
+      const mimeType = `image/${format}`;
+      const quality = parseInt(document.getElementById('qualitySlider').value) / 100;
+
+      outCanvas.toBlob((blob) => {
+        if (!blob) return;
+        state.resultBlob = blob;
+        
+        if (state.resultDataUrl) {
+          URL.revokeObjectURL(state.resultDataUrl);
+        }
+        state.resultDataUrl = URL.createObjectURL(blob);
+
+        document.getElementById('resultImage').src = state.resultDataUrl;
+        document.getElementById('resultDimensions').textContent = `${targetW} x ${targetH} px`;
+        document.getElementById('resultFileSize').textContent = formatFileSize(blob.size);
+
+      }, mimeType, quality);
+    }
+
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    }
+
+    function downloadImage() {
+      if (!state.resultBlob || !state.resultDataUrl) return;
+
+      const format = document.querySelector('input[name="exportFormat"]:checked').value;
+      const ext = format === 'jpeg' ? 'jpg' : format;
+      const inputName = document.getElementById('fileNameInput').value.trim() || 'cropped-image';
+      const fileName = `${inputName}.${ext}`;
+
+      const a = document.createElement('a');
+      a.href = state.resultDataUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    }
+  </script>
+</body>
+</html>

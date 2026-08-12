@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="ja" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>画像タイル分割ツール (Image Tile Splitter)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .checkerboard {
+      background-color: #1e293b;
+      background-image: 
+        linear-gradient(45deg, #0f172a 25%, transparent 25%), 
+        linear-gradient(-45deg, #0f172a 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #0f172a 75%), 
+        linear-gradient(-45deg, transparent 75%, #0f172a 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    }
+    /* Custom scrollbar for gallery */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(51, 65, 85, 0.8);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(71, 85, 105, 1);
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- Header -->
+  <header class="bg-slate-800/80 backdrop-blur border-b border-slate-700/60 sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-indigo-600 text-white rounded-xl shadow-lg shadow-indigo-500/30">
+          <i data-lucide="grid"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-lg leading-tight text-white">Tile Splitter</h1>
+          <p class="text-xs text-slate-400">画像タイル・スプライトシート分割ツール</p>
+        </div>
+      </div>
+      
+      <div id="statusBadge" class="hidden sm:flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-slate-700/50 border border-slate-600/50 text-slate-300">
+        <span class="w-2 h-2 rounded-full bg-slate-500" id="statusDot"></span>
+        <span id="statusText">画像未読み込み</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
+    
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Drop Zone (Visible when no image loaded) -->
+    <section id="dropZone" class="border-2 border-dashed border-slate-700 hover:border-indigo-500 transition-colors duration-200 rounded-2xl p-8 sm:p-12 flex flex-col items-center justify-center text-center bg-slate-800/30 hover:bg-slate-800/60 cursor-pointer min-h-[280px] group">
+      <input type="file" id="fileInput" accept="image/*" class="hidden">
+      <div class="w-16 h-16 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 group-hover:scale-110 group-hover:text-indigo-400 group-hover:border-indigo-500/50 transition-all duration-200 mb-4 shadow-inner">
+        <i data-lucide="upload-cloud" class="w-8 h-8"></i>
+      </div>
+      <h3 class="text-lg font-semibold text-slate-200 mb-1">画像をドラッグ＆ドロップ</h3>
+      <p class="text-sm text-slate-400 max-w-md mb-4">またはクリックしてファイルを選択（PNG, JPG, WEBP 対応）</p>
+      <span class="inline-flex items-center text-xs font-medium text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
+        <i data-lucide="info" class="w-3.5 h-3.5 mr-1.5"></i>スプライトシートやマップチップの分割に最適です
+      </span>
+    </section>
+
+    <!-- App Content Layout (Hidden by default, shown after loading image) -->
+    <div id="workspace" class="hidden flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      
+      <!-- Left Panel: Controls & Image Overlay Preview (4 cols on lg) -->
+      <div class="lg:col-span-5 flex flex-col gap-6">
+        
+        <!-- Controls Card -->
+        <div class="bg-slate-800 border border-slate-700/80 rounded-2xl p-5 shadow-xl space-y-5">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-700/60">
+            <h2 class="font-semibold text-slate-200 flex items-center gap-2">
+              <i data-lucide="sliders" class="w-4 h-4 text-indigo-400"></i>
+              分割設定
+            </h2>
+            <button id="changeImageBtn" class="text-xs text-slate-400 hover:text-white flex items-center gap-1 bg-slate-700/50 hover:bg-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-600/50 transition-colors">
+              <i data-lucide="image-plus" class="w-3.5 h-3.5"></i>
+              画像変更
+            </button>
+          </div>
+
+          <!-- Mode Selector -->
+          <div>
+            <label class="block text-xs font-medium text-slate-400 mb-2">分割モード</label>
+            <div class="grid grid-cols-2 gap-2 p-1 bg-slate-900/60 rounded-xl border border-slate-700/50">
+              <button id="modeSizeBtn" class="py-2 px-3 text-xs font-medium rounded-lg bg-indigo-600 text-white shadow-sm transition-all flex items-center justify-center gap-1.5">
+                <i data-lucide="square" class="w-3.5 h-3.5"></i> タイルサイズ (px)
+              </button>
+              <button id="modeCountBtn" class="py-2 px-3 text-xs font-medium rounded-lg text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center gap-1.5">
+                <i data-lucide="grid-3x3" class="w-3.5 h-3.5"></i> 分割数 (列x行)
+              </button>
+            </div>
+          </div>
+
+          <!-- Preset Tile Sizes (Visible in Size Mode) -->
+          <div id="presetContainer" class="space-y-1.5">
+            <span class="text-xs text-slate-400">よく使われるサイズ:</span>
+            <div class="flex flex-wrap gap-1.5">
+              <button class="preset-btn text-xs bg-slate-700/40 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-md border border-slate-600/40" data-size="16">16px</button>
+              <button class="preset-btn text-xs bg-slate-700/40 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-md border border-slate-600/40" data-size="32">32px</button>
+              <button class="preset-btn text-xs bg-slate-700/40 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-md border border-slate-600/40" data-size="48">48px</button>
+              <button class="preset-btn text-xs bg-slate-700/40 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-md border border-slate-600/40" data-size="64">64px</button>
+              <button class="preset-btn text-xs bg-slate-700/40 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-md border border-slate-600/40" data-size="128">128px</button>
+            </div>
+          </div>
+
+          <!-- Dynamic Input Fields -->
+          <div class="grid grid-cols-2 gap-4">
+            <!-- Field 1 -->
+            <div>
+              <label id="labelVal1" class="block text-xs font-medium text-slate-300 mb-1">タイルの幅 (px)</label>
+              <div class="relative">
+                <input type="number" id="inputVal1" min="1" value="32" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono">
+                <span class="absolute right-3 top-2.5 text-xs text-slate-500 pointer-events-none" id="unitVal1">px</span>
+              </div>
+            </div>
+            <!-- Field 2 -->
+            <div>
+              <label id="labelVal2" class="block text-xs font-medium text-slate-300 mb-1">タイルの高さ (px)</label>
+              <div class="relative">
+                <input type="number" id="inputVal2" min="1" value="32" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono">
+                <span class="absolute right-3 top-2.5 text-xs text-slate-500 pointer-events-none" id="unitVal2">px</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Aspect Ratio Lock / Sync Checkbox -->
+          <div class="flex items-center gap-2">
+            <input type="checkbox" id="aspectLock" checked class="rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-900 w-4 h-4">
+            <label for="aspectLock" class="text-xs text-slate-300 cursor-pointer select-none">縦横比を固定（正方形を維持）</label>
+          </div>
+
+          <!-- Advanced / Margins Accordion -->
+          <details class="group border-t border-slate-700/50 pt-3">
+            <summary class="flex items-center justify-between text-xs font-medium text-slate-400 cursor-pointer hover:text-slate-200 select-none">
+              <span class="flex items-center gap-1.5"><i data-lucide="settings-2" class="w-3.5 h-3.5"></i> オフセット・余白の設定</span>
+              <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180"></i>
+            </summary>
+            <div class="grid grid-cols-2 gap-3 pt-3">
+              <div>
+                <label class="block text-[11px] text-slate-400 mb-1">開始X (オフセット)</label>
+                <input type="number" id="offsetX" min="0" value="0" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono">
+              </div>
+              <div>
+                <label class="block text-[11px] text-slate-400 mb-1">開始Y (オフセット)</label>
+                <input type="number" id="offsetY" min="0" value="0" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono">
+              </div>
+              <div>
+                <label class="block text-[11px] text-slate-400 mb-1">タイル間隔 X (Gap)</label>
+                <input type="number" id="gapX" min="0" value="0" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono">
+              </div>
+              <div>
+                <label class="block text-[11px] text-slate-400 mb-1">タイル間隔 Y (Gap)</label>
+                <input type="number" id="gapY" min="0" value="0" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono">
+              </div>
+            </div>
+          </details>
+
+          <!-- Naming Options -->
+          <div class="border-t border-slate-700/50 pt-3 space-y-2">
+            <label class="block text-xs font-medium text-slate-400">ファイル命名規則</label>
+            <div class="grid grid-cols-2 gap-2">
+              <input type="text" id="prefixInput" value="tile" placeholder="プレフィックス" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-200">
+              <select id="namingPattern" class="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200">
+                <option value="row_col">tile_0_0.png (行_列)</option>
+                <option value="index">tile_001.png (連番)</option>
+                <option value="xy">tile_x0_y0.png (ピクセル座標)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- JSON Export Option -->
+          <div class="border-t border-slate-700/50 pt-3">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <input type="checkbox" id="includeJson" checked class="rounded border-slate-700 text-indigo-600 focus:ring-indigo-500 bg-slate-900 w-4 h-4">
+                <label for="includeJson" class="text-xs text-slate-300 cursor-pointer select-none flex items-center gap-1.5">
+                  <i data-lucide="file-json" class="w-3.5 h-3.5 text-amber-400"></i>
+                  JSONメタデータを同梱する
+                </label>
+              </div>
+              <span class="text-[10px] text-slate-500 font-mono">tiles_manifest.json</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1 pl-6">ファイル名、画像サイズ(px)、座標などの一覧をZIP内に保存します</p>
+          </div>
+        </div>
+
+        <!-- Source Image Preview Card -->
+        <div class="bg-slate-800 border border-slate-700/80 rounded-2xl p-5 shadow-xl space-y-3">
+          <div class="flex items-center justify-between">
+            <h3 class="font-semibold text-xs text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <i data-lucide="eye" class="w-3.5 h-3.5 text-indigo-400"></i>
+              分割ライン プレビュー
+            </h3>
+            <span id="imgInfoBadge" class="text-[11px] font-mono text-slate-400 bg-slate-900/80 px-2 py-0.5 rounded border border-slate-700">0x0 px</span>
+          </div>
+
+          <!-- Canvas Preview with Checkerboard -->
+          <div class="checkerboard rounded-xl border border-slate-700/80 overflow-auto max-h-[360px] flex items-center justify-center p-2 relative group">
+            <canvas id="previewCanvas" class="max-w-full h-auto block shadow-2xl transition-transform"></canvas>
+          </div>
+          <p class="text-[11px] text-slate-400 text-center">赤枠: 切削範囲 / グリッド: タイル区切り</p>
+        </div>
+
+      </div>
+
+      <!-- Right Panel: Tile Gallery & Action Bar (7 cols on lg) -->
+      <div class="lg:col-span-7 flex flex-col gap-6">
+        
+        <!-- Top Stats & Bulk Action Bar -->
+        <div class="bg-slate-800 border border-slate-700/80 rounded-2xl p-5 shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div>
+            <div class="text-xs text-slate-400">生成されるタイル数</div>
+            <div class="flex items-baseline gap-2">
+              <span id="totalTilesCount" class="text-3xl font-bold text-indigo-400 font-mono">0</span>
+              <span class="text-xs text-slate-400" id="gridDimensionText">(0列 x 0行)</span>
+            </div>
+          </div>
+
+          <button id="downloadZipBtn" class="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white px-6 py-3 rounded-xl font-semibold text-sm shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 transition-all transform hover:-translate-y-0.5">
+            <i data-lucide="archive" class="w-4 h-4"></i>
+            まとめてZIPダウンロード
+          </button>
+        </div>
+
+        <!-- Tiles Gallery Box -->
+        <div class="bg-slate-800 border border-slate-700/80 rounded-2xl p-5 shadow-xl flex-1 flex flex-col min-h-[400px]">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-700/60 mb-4">
+            <h3 class="font-semibold text-slate-200 text-sm flex items-center gap-2">
+              <i data-lucide="layout-grid" class="w-4 h-4 text-indigo-400"></i>
+              分割結果ギャラリー
+            </h3>
+            <span class="text-xs text-slate-400" id="tileResolutionBadge">サイズ: -- x -- px</span>
+          </div>
+
+          <!-- Grid Container -->
+          <div id="tileGallery" class="checkerboard rounded-xl border border-slate-700/80 p-4 flex-1 overflow-y-auto max-h-[560px] grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 align-content-start">
+            <!-- Tiles inserted here dynamically -->
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <script>
+    // --- Application State ---
+    const state = {
+      image: null,
+      imageWidth: 0,
+      imageHeight: 0,
+      mode: 'size', // 'size' or 'count'
+      tileWidth: 32,
+      tileHeight: 32,
+      cols: 10,
+      rows: 10,
+      offsetX: 0,
+      offsetY: 0,
+      gapX: 0,
+      gapY: 0,
+      aspectLocked: true,
+      prefix: 'tile',
+      pattern: 'row_col',
+      generatedTiles: [] // Array of { name, blob, dataUrl, col, row, width, height }
+    };
+
+    // --- DOM Elements ---
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const workspace = document.getElementById('workspace');
+    const statusBadge = document.getElementById('statusBadge');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+
+    const modeSizeBtn = document.getElementById('modeSizeBtn');
+    const modeCountBtn = document.getElementById('modeCountBtn');
+    const presetContainer = document.getElementById('presetContainer');
+    
+    const labelVal1 = document.getElementById('labelVal1');
+    const labelVal2 = document.getElementById('labelVal2');
+    const inputVal1 = document.getElementById('inputVal1');
+    const inputVal2 = document.getElementById('inputVal2');
+    const unitVal1 = document.getElementById('unitVal1');
+    const unitVal2 = document.getElementById('unitVal2');
+    
+    const aspectLock = document.getElementById('aspectLock');
+    const offsetXInput = document.getElementById('offsetX');
+    const offsetYInput = document.getElementById('offsetY');
+    const gapXInput = document.getElementById('gapX');
+    const gapYInput = document.getElementById('gapY');
+    
+    const prefixInput = document.getElementById('prefixInput');
+    const namingPatternSelect = document.getElementById('namingPattern');
+    
+    const changeImageBtn = document.getElementById('changeImageBtn');
+    const previewCanvas = document.getElementById('previewCanvas');
+    const imgInfoBadge = document.getElementById('imgInfoBadge');
+    
+    const totalTilesCount = document.getElementById('totalTilesCount');
+    const gridDimensionText = document.getElementById('gridDimensionText');
+    const tileResolutionBadge = document.getElementById('tileResolutionBadge');
+    const tileGallery = document.getElementById('tileGallery');
+    const downloadZipBtn = document.getElementById('downloadZipBtn');
+
+    // --- Initialize Lucide Icons ---
+    lucide.createIcons();
+
+    // --- Event Listeners: File Upload ---
+    dropZone.addEventListener('click', () => fileInput.click());
+    
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('border-indigo-500', 'bg-slate-800/80');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('border-indigo-500', 'bg-slate-800/80');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('border-indigo-500', 'bg-slate-800/80');
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        handleFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        handleFile(e.target.files[0]);
+      }
+    });
+
+    changeImageBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+
+    function handleFile(file) {
+      if (!file.type.startsWith('image/')) {
+        showToast('画像ファイルを選択してください。', 'error');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          state.image = img;
+          state.imageWidth = img.width;
+          state.imageHeight = img.height;
+          
+          // Defaults based on image
+          if (state.mode === 'size') {
+            // Auto fit if default tile is larger than image
+            if (state.tileWidth > img.width) state.tileWidth = img.width;
+            if (state.tileHeight > img.height) state.tileHeight = img.height;
+            inputVal1.value = state.tileWidth;
+            inputVal2.value = state.tileHeight;
+          } else {
+            inputVal1.value = state.cols;
+            inputVal2.value = state.rows;
+          }
+
+          // UI Transition
+          dropZone.classList.add('hidden');
+          workspace.classList.remove('hidden');
+          
+          // Update Status
+          statusDot.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+          statusText.textContent = `${file.name} (${img.width}×${img.height}px)`;
+          imgInfoBadge.textContent = `${img.width}×${img.height} px`;
+
+          showToast('画像を読み込みました！');
+          recalculateAndRender();
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // --- Mode Switching ---
+    modeSizeBtn.addEventListener('click', () => {
+      if (state.mode === 'size') return;
+      state.mode = 'size';
+      modeSizeBtn.className = "py-2 px-3 text-xs font-medium rounded-lg bg-indigo-600 text-white shadow-sm transition-all flex items-center justify-center gap-1.5";
+      modeCountBtn.className = "py-2 px-3 text-xs font-medium rounded-lg text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center gap-1.5";
+      
+      presetContainer.classList.remove('hidden');
+      labelVal1.textContent = "タイルの幅 (px)";
+      labelVal2.textContent = "タイルの高さ (px)";
+      unitVal1.textContent = "px";
+      unitVal2.textContent = "px";
+
+      inputVal1.value = state.tileWidth;
+      inputVal2.value = state.tileHeight;
+
+      recalculateAndRender();
+    });
+
+    modeCountBtn.addEventListener('click', () => {
+      if (state.mode === 'count') return;
+      state.mode = 'count';
+      modeCountBtn.className = "py-2 px-3 text-xs font-medium rounded-lg bg-indigo-600 text-white shadow-sm transition-all flex items-center justify-center gap-1.5";
+      modeSizeBtn.className = "py-2 px-3 text-xs font-medium rounded-lg text-slate-400 hover:text-slate-200 transition-all flex items-center justify-center gap-1.5";
+      
+      presetContainer.classList.add('hidden');
+      labelVal1.textContent = "横の分割数 (列)";
+      labelVal2.textContent = "縦の分割数 (行)";
+      unitVal1.textContent = "列";
+      unitVal2.textContent = "行";
+
+      inputVal1.value = state.cols;
+      inputVal2.value = state.rows;
+
+      recalculateAndRender();
+    });
+
+    // --- Inputs Handling ---
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const val = parseInt(e.target.dataset.size, 10);
+        state.tileWidth = val;
+        state.tileHeight = val;
+        inputVal1.value = val;
+        inputVal2.value = val;
+        recalculateAndRender();
+      });
+    });
+
+    inputVal1.addEventListener('input', (e) => {
+      let val = Math.max(1, parseInt(e.target.value, 10) || 1);
+      if (state.mode === 'size') {
+        state.tileWidth = val;
+        if (state.aspectLocked) {
+          state.tileHeight = val;
+          inputVal2.value = val;
+        }
+      } else {
+        state.cols = val;
+        if (state.aspectLocked) {
+          state.rows = val;
+          inputVal2.value = val;
+        }
+      }
+      recalculateAndRender();
+    });
+
+    inputVal2.addEventListener('input', (e) => {
+      let val = Math.max(1, parseInt(e.target.value, 10) || 1);
+      if (state.mode === 'size') {
+        state.tileHeight = val;
+        if (state.aspectLocked) {
+          state.tileWidth = val;
+          inputVal1.value = val;
+        }
+      } else {
+        state.rows = val;
+        if (state.aspectLocked) {
+          state.cols = val;
+          inputVal1.value = val;
+        }
+      }
+      recalculateAndRender();
+    });
+
+    aspectLock.addEventListener('change', (e) => {
+      state.aspectLocked = e.target.checked;
+      if (state.aspectLocked) {
+        inputVal2.value = inputVal1.value;
+        if (state.mode === 'size') {
+          state.tileHeight = state.tileWidth;
+        } else {
+          state.rows = state.cols;
+        }
+        recalculateAndRender();
+      }
+    });
+
+    offsetXInput.addEventListener('input', (e) => {
+      state.offsetX = Math.max(0, parseInt(e.target.value, 10) || 0);
+      recalculateAndRender();
+    });
+    offsetYInput.addEventListener('input', (e) => {
+      state.offsetY = Math.max(0, parseInt(e.target.value, 10) || 0);
+      recalculateAndRender();
+    });
+    gapXInput.addEventListener('input', (e) => {
+      state.gapX = Math.max(0, parseInt(e.target.value, 10) || 0);
+      recalculateAndRender();
+    });
+    gapYInput.addEventListener('input', (e) => {
+      state.gapY = Math.max(0, parseInt(e.target.value, 10) || 0);
+      recalculateAndRender();
+    });
+
+    prefixInput.addEventListener('input', (e) => {
+      state.prefix = e.target.value.trim() || 'tile';
+      renderGalleryOnly();
+    });
+
+    namingPatternSelect.addEventListener('change', (e) => {
+      state.pattern = e.target.value;
+      renderGalleryOnly();
+    });
+
+    // --- Core Calculation Logic ---
+    function recalculateAndRender() {
+      if (!state.image) return;
+
+      const imgW = state.imageWidth;
+      const imgH = state.imageHeight;
+
+      if (state.mode === 'size') {
+        const availW = Math.max(1, imgW - state.offsetX);
+        const availH = Math.max(1, imgH - state.offsetY);
+        
+        state.cols = Math.max(0, Math.floor((availW + state.gapX) / (state.tileWidth + state.gapX)));
+        state.rows = Math.max(0, Math.floor((availH + state.gapY) / (state.tileHeight + state.gapY)));
+      } else {
+        // Count mode
+        const availW = Math.max(1, imgW - state.offsetX - (state.cols - 1) * state.gapX);
+        const availH = Math.max(1, imgH - state.offsetY - (state.rows - 1) * state.gapY);
+
+        state.tileWidth = Math.max(1, Math.floor(availW / state.cols));
+        state.tileHeight = Math.max(1, Math.floor(availH / state.rows));
+      }
+
+      // Update Header Stats
+      const total = state.cols * state.rows;
+      totalTilesCount.textContent = total;
+      gridDimensionText.textContent = `(${state.cols}列 × ${state.rows}行)`;
+      tileResolutionBadge.textContent = `タイルサイズ: ${state.tileWidth} × ${state.tileHeight} px`;
+
+      // Draw Grid Overlay on Canvas
+      drawOverlayCanvas();
+
+      // Slice & Generate Tiles
+      generateTileBlobs();
+    }
+
+    function drawOverlayCanvas() {
+      const canvas = previewCanvas;
+      const ctx = canvas.getContext('2d');
+
+      canvas.width = state.imageWidth;
+      canvas.height = state.imageHeight;
+
+      // Draw source image
+      ctx.drawImage(state.image, 0, 0);
+
+      // Draw Grid Overlay
+      ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)'; // Indigo line
+      ctx.lineWidth = Math.max(1, Math.floor(state.imageWidth / 400));
+
+      for (let r = 0; r < state.rows; r++) {
+        for (let c = 0; c < state.cols; c++) {
+          const x = state.offsetX + c * (state.tileWidth + state.gapX);
+          const y = state.offsetY + r * (state.tileHeight + state.gapY);
+
+          // Tile Outline
+          ctx.strokeStyle = '#6366f1';
+          ctx.strokeRect(x, y, state.tileWidth, state.tileHeight);
+
+          // Tile Fill tint
+          ctx.fillStyle = 'rgba(99, 102, 241, 0.08)';
+          ctx.fillRect(x, y, state.tileWidth, state.tileHeight);
+        }
+      }
+    }
+
+    function generateTileBlobs() {
+      state.generatedTiles = [];
+      
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = state.tileWidth;
+      offCanvas.height = state.tileHeight;
+      const ctx = offCanvas.getContext('2d');
+
+      let index = 1;
+      for (let r = 0; r < state.rows; r++) {
+        for (let c = 0; c < state.cols; c++) {
+          const sx = state.offsetX + c * (state.tileWidth + state.gapX);
+          const sy = state.offsetY + r * (state.tileHeight + state.gapY);
+
+          ctx.clearRect(0, 0, state.tileWidth, state.tileHeight);
+          ctx.drawImage(
+            state.image,
+            sx, sy, state.tileWidth, state.tileHeight,
+            0, 0, state.tileWidth, state.tileHeight
+          );
+
+          const dataUrl = offCanvas.toDataURL('image/png');
+          
+          state.generatedTiles.push({
+            dataUrl,
+            col: c,
+            row: r,
+            x: sx,
+            y: sy,
+            index: index++
+          });
+        }
+      }
+
+      renderGalleryOnly();
+    }
+
+    function getTileFileName(tile) {
+      const p = state.prefix;
+      if (state.pattern === 'index') {
+        const paddedIndex = String(tile.index).padStart(3, '0');
+        return `${p}_${paddedIndex}.png`;
+      } else if (state.pattern === 'xy') {
+        return `${p}_x${tile.x}_y${tile.y}.png`;
+      } else {
+        // row_col
+        return `${p}_r${tile.row}_c${tile.col}.png`;
+      }
+    }
+
+    function renderGalleryOnly() {
+      tileGallery.innerHTML = '';
+
+      if (state.generatedTiles.length === 0) {
+        tileGallery.innerHTML = `
+          <div class="col-span-full py-12 text-center text-slate-500 text-xs">
+            有効なタイルが生成されませんでした。<br>幅・高さやオフセットの値を確認してください。
+          </div>
+        `;
+        return;
+      }
+
+      // Limit gallery DOM items for extreme numbers (e.g. 1000+) to preserve performance
+      const MAX_PREVIEW = 200;
+      const tilesToDisplay = state.generatedTiles.slice(0, MAX_PREVIEW);
+
+      tilesToDisplay.forEach((tile) => {
+        const fileName = getTileFileName(tile);
+        
+        const card = document.createElement('div');
+        card.className = "group relative bg-slate-800/90 border border-slate-700/60 rounded-lg p-1.5 flex flex-col items-center hover:border-indigo-500/80 transition-all hover:shadow-lg";
+        
+        card.innerHTML = `
+          <div class="w-full aspect-square flex items-center justify-center overflow-hidden rounded bg-slate-900/50 relative">
+            <img src="${tile.dataUrl}" alt="${fileName}" class="max-w-full max-h-full object-contain pixelated">
+            
+            <!-- Individual Hover Download Overlay -->
+            <a href="${tile.dataUrl}" download="${fileName}" title="個別ダウンロード: ${fileName}" class="absolute inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white">
+              <i data-lucide="download" class="w-4 h-4"></i>
+            </a>
+          </div>
+          <span class="text-[10px] font-mono text-slate-400 mt-1 truncate max-w-full px-0.5" title="${fileName}">${fileName}</span>
+        `;
+
+        tileGallery.appendChild(card);
+      });
+
+      if (state.generatedTiles.length > MAX_PREVIEW) {
+        const warning = document.createElement('div');
+        warning.className = "col-span-full py-2 text-center text-slate-400 text-xs border border-dashed border-slate-700 rounded-lg bg-slate-800/40";
+        warning.textContent = `※ プレビューは最初の ${MAX_PREVIEW} 枚を表示中（ZIPには全 ${state.generatedTiles.length} 枚が含まれます）`;
+        tileGallery.appendChild(warning);
+      }
+
+      lucide.createIcons();
+    }
+
+    // --- ZIP Bulk Download Handler ---
+    downloadZipBtn.addEventListener('click', async () => {
+      if (!state.generatedTiles || state.generatedTiles.length === 0) {
+        showToast('ダウンロードするタイルがありません。', 'error');
+        return;
+      }
+
+      const zip = new JSZip();
+      const folder = zip.folder("tiles");
+
+      downloadZipBtn.disabled = true;
+      const originalText = downloadZipBtn.innerHTML;
+      downloadZipBtn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> ZIP作成中...`;
+      lucide.createIcons();
+
+      try {
+        state.generatedTiles.forEach((tile) => {
+          const fileName = getTileFileName(tile);
+          // Convert Data URL to pure Base64
+          const base64Data = tile.dataUrl.replace(/^data:image\/png;base64,/, "");
+          folder.file(fileName, base64Data, { base64: true });
+        });
+
+        // JSONメタデータの出力チェック
+        const includeJson = document.getElementById('includeJson')?.checked;
+        if (includeJson) {
+          const manifestData = {
+            imageInfo: {
+              width: state.imageWidth,
+              height: state.imageHeight
+            },
+            grid: {
+              cols: state.cols,
+              rows: state.rows,
+              totalTiles: state.generatedTiles.length,
+              tileWidth: state.tileWidth,
+              tileHeight: state.tileHeight,
+              offsetX: state.offsetX,
+              offsetY: state.offsetY,
+              gapX: state.gapX,
+              gapY: state.gapY
+            },
+            tiles: state.generatedTiles.map((tile) => {
+              const fileName = getTileFileName(tile);
+              return {
+                filename: fileName,
+                width: state.tileWidth,
+                height: state.tileHeight,
+                col: tile.col,
+                row: tile.row,
+                x: tile.x,
+                y: tile.y
+              };
+            })
+          };
+
+          zip.file("tiles_manifest.json", JSON.stringify(manifestData, null, 2));
+        }
+
+        const content = await zip.generateAsync({ type: "blob" });
+        
+        // Trigger file download
+        const url = URL.createObjectURL(content);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${state.prefix}_tiles.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        const toastMsg = includeJson 
+          ? `${state.generatedTiles.length} 枚のタイルとJSONメタデータをZIPでダウンロードしました！`
+          : `${state.generatedTiles.length} 枚のタイルをZIPでダウンロードしました！`;
+        showToast(toastMsg);
+      } catch (err) {
+        console.error(err);
+        showToast('ZIP作成中にエラーが発生しました。', 'error');
+      } finally {
+        downloadZipBtn.disabled = false;
+        downloadZipBtn.innerHTML = originalText;
+        lucide.createIcons();
+      }
+    });
+
+    // --- Utility: Notification Toast ---
+    function showToast(message, type = 'info') {
+      const toastContainer = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      
+      const isError = type === 'error';
+      const bgColor = isError ? 'bg-red-600' : 'bg-indigo-600';
+      const iconName = isError ? 'alert-circle' : 'check-circle';
+
+      toast.className = `pointer-events-auto flex items-center gap-2.5 px-4 py-3 rounded-xl ${bgColor} text-white text-xs font-medium shadow-2xl transition-all transform translate-y-4 opacity-0`;
+      toast.innerHTML = `
+        <i data-lucide="${iconName}" class="w-4 h-4 flex-shrink-0"></i>
+        <span>${message}</span>
+      `;
+
+      toastContainer.appendChild(toast);
+      lucide.createIcons();
+
+      // Animate in
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-4', 'opacity-0');
+      });
+
+      // Remove after 3s
+      setTimeout(() => {
+        toast.classList.add('translate-y-4', 'opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+  </script>
+</body>
+</html>

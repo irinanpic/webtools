@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="ja" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TileSheet Pack Fusion</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              400: '#38bdf8',
+              500: '#0ea5e9',
+              600: '#0284c7',
+              700: '#0369a1',
+              900: '#0c4a6e',
+            },
+            ai: {
+              400: '#c084fc',
+              500: '#a855f7',
+              600: '#9333ea',
+              700: '#7e22ce',
+              900: '#3b0764',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- JSZip -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <style>
+    /* 透過背景のチェッカーボード模様 */
+    .checkerboard {
+      background-color: #0f172a;
+      background-image: 
+        linear-gradient(45deg, #1e293b 25%, transparent 25%), 
+        linear-gradient(-45deg, #1e293b 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #1e293b 75%), 
+        linear-gradient(-45deg, transparent 75%, #1e293b 75%);
+      background-size: 16px 16px;
+      background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    }
+
+    /* カスタムスクロールバー */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* セル選択・ドラッグ時のアニメーション */
+    .grid-cell {
+      transition: outline 0.15s ease-in-out, transform 0.15s ease-in-out;
+    }
+    .grid-cell.drag-over {
+      outline: 2px dashed #38bdf8;
+      background-color: rgba(56, 189, 248, 0.2) !important;
+      transform: scale(1.02);
+    }
+    .grid-cell.selected-cell {
+      outline: 2px solid #a855f7;
+      box-shadow: 0 0 12px rgba(168, 85, 247, 0.5);
+      animation: pulse-border 1.5s infinite;
+    }
+    @keyframes pulse-border {
+      0%, 100% { outline-color: #a855f7; }
+      50% { outline-color: #c084fc; }
+    }
+
+    /* ピクセルアート用くっきり描画設定 */
+    .pixelated {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- ヘッダー -->
+  <header class="bg-slate-900 border-b border-slate-800 px-6 py-3 flex items-center justify-between shrink-0 shadow-md">
+    <div class="flex items-center gap-3">
+      <div class="p-2 bg-gradient-to-br from-brand-500 to-ai-600 rounded-xl shadow-lg shadow-brand-500/20 flex items-center justify-center">
+        <i data-lucide="layout-grid" class="w-6 h-6 text-white"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold bg-gradient-to-r from-white via-slate-200 to-brand-400 bg-clip-text text-transparent flex items-center gap-2">
+          TileSheet Pack Fusion
+        </h1>
+        <p class="text-xs text-slate-400">画像タイルの再統合・グリッドレイアウト・JSONマッピング出力</p>
+      </div>
+    </div>
+
+    <!-- アクションボタン -->
+    <div class="flex items-center gap-3">
+      <button id="btn-clear-all" class="px-3 py-1.5 text-xs text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition border border-transparent hover:border-rose-500/20 flex items-center gap-1.5">
+        <i data-lucide="trash-2" class="w-4 h-4"></i>
+        すべて削除
+      </button>
+      <button id="btn-download-zip" class="px-4 py-2 bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-medium text-xs rounded-lg shadow-lg shadow-brand-500/25 transition flex items-center gap-2 border border-brand-400/30 disabled:opacity-50 disabled:cursor-not-allowed">
+        <i data-lucide="download" class="w-4 h-4"></i>
+        ZIP一括ダウンロード
+      </button>
+    </div>
+  </header>
+
+  <!-- メインコンテンツ -->
+  <div class="flex-1 flex overflow-hidden">
+    
+    <!-- 左サイドバー: 画像アップロード & 設定 -->
+    <aside class="w-80 bg-slate-900/90 border-r border-slate-800 flex flex-col shrink-0 overflow-y-auto">
+      
+      <!-- 画像追加エリア -->
+      <div class="p-4 border-b border-slate-800">
+        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">画像ファイルの追加</label>
+        <div id="drop-zone" class="border-2 border-dashed border-slate-700 hover:border-brand-500 bg-slate-950/50 hover:bg-brand-500/5 rounded-xl p-4 text-center cursor-pointer transition flex flex-col items-center justify-center gap-2 group">
+          <input type="file" id="file-input" multiple accept="image/*" class="hidden">
+          <div class="p-2.5 bg-slate-800 group-hover:bg-brand-500/20 text-slate-400 group-hover:text-brand-400 rounded-full transition">
+            <i data-lucide="upload-cloud" class="w-5 h-5"></i>
+          </div>
+          <div class="text-xs text-slate-300">
+            <span class="font-medium text-brand-400">クリックしてファイルを選択</span> または<br>ここにドラッグ＆ドロップ
+          </div>
+          <p class="text-[10px] text-slate-500">PNG, JPG, WebP などの画像に対応</p>
+        </div>
+      </div>
+
+      <!-- パック設定 -->
+      <div class="p-4 border-b border-slate-800 space-y-4">
+        <label class="block text-xs font-semibold text-slate-300 uppercase tracking-wider">グリッド & タイル設定</label>
+
+        <!-- タイルサイズ設定 -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-[11px] text-slate-400 mb-1 block">タイル幅 (px)</label>
+            <input type="number" id="input-tile-width" value="32" min="8" max="512" step="8" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono">
+          </div>
+          <div>
+            <label class="text-[11px] text-slate-400 mb-1 block">タイル高 (px)</label>
+            <input type="number" id="input-tile-height" value="32" min="8" max="512" step="8" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono">
+          </div>
+        </div>
+
+        <!-- 列数 & 座標基準 -->
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-[11px] text-slate-400 mb-1 block">横方向の列数 (Cols)</label>
+            <input type="number" id="input-cols" value="10" min="1" max="64" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono">
+          </div>
+          <div>
+            <label class="text-[11px] text-slate-400 mb-1 block">表示行数 (Rows)</label>
+            <input type="number" id="input-rows" value="4" min="1" max="64" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3">
+          <div>
+            <label class="text-[11px] text-slate-400 mb-1 block">座標インデックス</label>
+            <select id="select-coord-type" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500">
+              <option value="1-based">1開始 (1, 2, ...)</option>
+              <option value="0-based">0開始 (0, 1, ...)</option>
+              <option value="pixel">ピクセル単位 (px)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- オプション -->
+        <div class="space-y-2 pt-1">
+          <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+            <input type="checkbox" id="check-auto-size" checked class="rounded border-slate-700 bg-slate-950 text-brand-500 focus:ring-0">
+            1枚目の画像からタイルサイズを自動判定する
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+            <input type="checkbox" id="check-strip-ext" checked class="rounded border-slate-700 bg-slate-950 text-brand-500 focus:ring-0">
+            JSONキー名から拡張子を削除する
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+            <input type="checkbox" id="check-include-meta" checked class="rounded border-slate-700 bg-slate-950 text-brand-500 focus:ring-0">
+            JSONにメタデータ (meta) を含める
+          </label>
+        </div>
+      </div>
+
+      <!-- アセット一覧リスト -->
+      <div class="flex-1 p-4 flex flex-col min-h-0">
+        <div class="flex items-center justify-between mb-2">
+          <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider">読み込み済み画像</label>
+          <span id="image-count-badge" class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full font-mono">0 件</span>
+        </div>
+
+        <div id="image-list" class="flex-1 overflow-y-auto space-y-1.5 pr-1">
+          <div class="text-center py-8 text-xs text-slate-500">
+            画像がまだ読み込まれていません
+          </div>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- メイン表示領域 -->
+    <main class="flex-1 bg-slate-950 flex flex-col min-w-0 overflow-hidden">
+      
+      <!-- タブナビゲーション -->
+      <div class="bg-slate-900/50 border-b border-slate-800 px-6 py-2 flex items-center justify-between shrink-0 flex-wrap gap-2">
+        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <button id="tab-btn-canvas" class="tab-btn px-3.5 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 bg-brand-500/20 text-brand-400 border border-brand-500/30">
+            <i data-lucide="eye" class="w-3.5 h-3.5"></i> 画像統合 プレビュー
+          </button>
+          <button id="tab-btn-json" class="tab-btn px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5 border border-transparent">
+            <i data-lucide="code" class="w-3.5 h-3.5"></i> マッピング JSON
+          </button>
+          <button id="tab-btn-exporter" class="tab-btn px-3.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-slate-200 transition flex items-center gap-1.5 border border-transparent">
+            <i data-lucide="terminal" class="w-3.5 h-3.5"></i> エンジン用コード
+          </button>
+        </div>
+
+        <!-- キャンバス用表示切替 ツールバー -->
+        <div id="canvas-tools" class="flex items-center gap-3 text-xs text-slate-400">
+          
+          <!-- モード切り替え (グリッド編集 vs 最終合成画像) -->
+          <div class="flex items-center bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+            <button id="view-mode-grid" class="px-2.5 py-1 rounded text-[11px] font-medium transition flex items-center gap-1 bg-slate-800 text-brand-400">
+              <i data-lucide="grid" class="w-3.5 h-3.5"></i> 配置編集
+            </button>
+            <button id="view-mode-atlas" class="px-2.5 py-1 rounded text-[11px] font-medium transition flex items-center gap-1 text-slate-400 hover:text-slate-200">
+              <i data-lucide="image" class="w-3.5 h-3.5"></i> 最終合成画像 (PNG)
+            </button>
+          </div>
+
+          <button id="btn-pack-grid" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] rounded-lg transition flex items-center gap-1.5 border border-slate-700">
+            <i data-lucide="align-left" class="w-3.5 h-3.5 text-slate-300"></i> 詰めて配置
+          </button>
+          <span id="canvas-size-info" class="text-[11px] bg-slate-800 text-slate-300 px-2 py-1 rounded-lg font-mono border border-slate-700/50">0 x 0 px</span>
+        </div>
+      </div>
+
+      <!-- タブコンテンツエリア -->
+      <div class="flex-1 relative overflow-hidden flex flex-col">
+        
+        <!-- キャンバス表示 & インタラクティブ・グリッドビュー -->
+        <div id="tab-content-canvas" class="w-full h-full p-6 overflow-auto flex flex-col items-center justify-start checkerboard min-h-[400px]">
+          
+          <!-- 選択・操作ガイドバナー (配置編集モード用) -->
+          <div id="selection-banner" class="w-full max-w-xl mb-3 hidden">
+            <div class="bg-ai-900/90 border border-ai-500/50 text-ai-200 px-4 py-2 rounded-lg shadow-lg flex items-center justify-between gap-2 text-xs">
+              <span class="flex items-center gap-1.5 font-medium">
+                <i data-lucide="mouse-pointer-click" class="w-4 h-4 text-ai-400 animate-bounce"></i>
+                <span id="selected-item-name">「画像」を選択中</span> - 移動先のセルをクリックしてください
+              </span>
+              <button id="btn-cancel-selection" class="px-2 py-0.5 bg-ai-800 hover:bg-ai-700 text-white rounded text-[11px] border border-ai-600 transition">
+                選択解除
+              </button>
+            </div>
+          </div>
+
+          <p id="grid-help-text" class="text-xs text-slate-300 mb-3 bg-slate-900/90 px-3 py-1.5 rounded-full border border-slate-700 shadow flex items-center gap-2">
+            <span class="text-amber-400 font-bold">💡 操作方法:</span> 
+            <span>画像を<b>ドラッグ＆ドロップ</b>、または<b>クリック選択</b>してセルへ移動できます</span>
+          </p>
+
+          <!-- モード1: グリッドセルによるレイアウト配置ビュー -->
+          <div id="interactive-grid-container" class="relative max-w-full flex items-center justify-center p-2 rounded-xl bg-slate-950/60 border border-slate-800 shadow-2xl">
+            <div id="grid-overlay" class="grid gap-[1px] bg-slate-800/80 p-[1px] rounded-lg"></div>
+          </div>
+
+          <!-- モード2: 最終合成画像（実物PNG）のリアルタイムプレビュービュー -->
+          <div id="atlas-preview-container" class="hidden flex-col items-center gap-3 w-full">
+            
+            <!-- 拡大率コントロールツールバー -->
+            <div class="bg-slate-900/90 px-4 py-1.5 rounded-xl border border-slate-800 shadow flex items-center gap-4 text-xs">
+              <span class="text-slate-400 font-medium flex items-center gap-1">
+                <i data-lucide="zoom-in" class="w-3.5 h-3.5 text-brand-400"></i> 表示倍率:
+              </span>
+              <div class="flex items-center gap-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+                <button class="zoom-btn active px-2 py-0.5 rounded text-[11px] font-mono text-brand-400 bg-brand-500/20" data-zoom="1">100%</button>
+                <button class="zoom-btn px-2 py-0.5 rounded text-[11px] font-mono text-slate-400 hover:text-slate-200" data-zoom="2">200%</button>
+                <button class="zoom-btn px-2 py-0.5 rounded text-[11px] font-mono text-slate-400 hover:text-slate-200" data-zoom="4">400%</button>
+              </div>
+
+              <div class="h-3 w-px bg-slate-800"></div>
+
+              <button id="btn-save-single-png" class="text-brand-400 hover:text-brand-300 font-medium flex items-center gap-1 text-[11px]">
+                <i data-lucide="download" class="w-3.5 h-3.5"></i> PNG画像をダウンロード
+              </button>
+            </div>
+
+            <!-- 合成結果画像表示エリア -->
+            <div class="p-3 bg-slate-950/80 rounded-xl border border-slate-800 shadow-2xl max-w-full overflow-auto flex items-center justify-center">
+              <img id="atlas-result-img" class="pixelated shadow-md rounded border border-slate-800/50 max-w-full h-auto" alt="合成画像プレビュー">
+            </div>
+          </div>
+
+          <!-- 実際の合成描画用 Canvas (非表示) -->
+          <canvas id="atlas-canvas" class="hidden"></canvas>
+        </div>
+
+        <!-- JSON プレビュー タブ -->
+        <div id="tab-content-json" class="w-full h-full p-6 hidden overflow-auto flex flex-col">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-semibold text-slate-300">生成されるマッピング JSON</span>
+            <button id="btn-copy-json" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg transition flex items-center gap-1.5 border border-slate-700">
+              <i data-lucide="copy" class="w-3.5 h-3.5"></i> JSONをコピー
+            </button>
+          </div>
+          <pre id="json-preview" class="flex-1 bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs font-mono text-brand-400 overflow-auto selection:bg-brand-500/30"></pre>
+        </div>
+
+        <!-- コードエクスポート タブ -->
+        <div id="tab-content-exporter" class="w-full h-full p-6 hidden overflow-auto flex flex-col">
+          <div class="flex items-center gap-3 mb-4 border-b border-slate-800 pb-3 flex-wrap">
+            <span class="text-xs font-semibold text-slate-300">ターゲットエンジン:</span>
+            <div class="flex items-center gap-1.5">
+              <button class="engine-btn active px-3 py-1 rounded-lg text-xs bg-brand-500/20 text-brand-400 border border-brand-500/30" data-engine="phaser">Phaser 3</button>
+              <button class="engine-btn px-3 py-1 rounded-lg text-xs text-slate-400 hover:text-slate-200 border border-transparent" data-engine="typescript">TypeScript (PixiJS)</button>
+              <button class="engine-btn px-3 py-1 rounded-lg text-xs text-slate-400 hover:text-slate-200 border border-transparent" data-engine="unity">Unity (C#)</button>
+              <button class="engine-btn px-3 py-1 rounded-lg text-xs text-slate-400 hover:text-slate-200 border border-transparent" data-engine="godot">Godot 4</button>
+              <button class="engine-btn px-3 py-1 rounded-lg text-xs text-slate-400 hover:text-slate-200 border border-transparent" data-engine="html5">HTML5 Canvas</button>
+            </div>
+          </div>
+          <pre id="code-preview" class="flex-1 bg-slate-900 border border-slate-800 rounded-xl p-4 text-xs font-mono text-emerald-400 overflow-auto"></pre>
+        </div>
+
+      </div>
+
+      <!-- トースト通知 -->
+      <div id="toast" class="fixed bottom-5 right-5 bg-slate-800 border border-slate-700 text-slate-100 px-4 py-2.5 rounded-xl shadow-2xl text-xs flex items-center gap-2 transform translate-y-20 opacity-0 transition-all duration-300 z-50">
+        <i data-lucide="info" class="w-4 h-4 text-brand-400"></i>
+        <span id="toast-message">メッセージ</span>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    /* アプリケーションの状態管理 */
+    const state = {
+      images: [], // { id, file, name, imgObj, width, height, slotIndex }
+      tileWidth: 32,
+      tileHeight: 32,
+      autoSetTileSize: true, // 1枚目の画像からタイルサイズを自動設定するかどうか
+      cols: 10,
+      minRows: 4,
+      rows: 4,
+      coordType: '1-based', // '1-based', '0-based', 'pixel'
+      stripExt: true,
+      includeAiMeta: true,
+      activeTab: 'canvas',
+      viewMode: 'grid', // 'grid' (配置編集) or 'atlas' (最終合成画像)
+      zoomLevel: 1, // 1, 2, 4
+      selectedEngine: 'phaser',
+      draggedImgId: null,
+      selectedImgId: null
+    };
+
+    // DOM要素の取得
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const imageList = document.getElementById('image-list');
+    const imageCountBadge = document.getElementById('image-count-badge');
+    const inputTileWidth = document.getElementById('input-tile-width');
+    const inputTileHeight = document.getElementById('input-tile-height');
+    const inputCols = document.getElementById('input-cols');
+    const inputRows = document.getElementById('input-rows');
+    const selectCoordType = document.getElementById('select-coord-type');
+    const checkAutoSize = document.getElementById('check-auto-size');
+    const checkStripExt = document.getElementById('check-strip-ext');
+    const checkIncludeMeta = document.getElementById('check-include-meta');
+    
+    const atlasCanvas = document.getElementById('atlas-canvas');
+    const interactiveGridContainer = document.getElementById('interactive-grid-container');
+    const atlasPreviewContainer = document.getElementById('atlas-preview-container');
+    const atlasResultImg = document.getElementById('atlas-result-img');
+    const gridOverlay = document.getElementById('grid-overlay');
+    const gridHelpText = document.getElementById('grid-help-text');
+    const canvasSizeInfo = document.getElementById('canvas-size-info');
+    const jsonPreview = document.getElementById('json-preview');
+    const codePreview = document.getElementById('code-preview');
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toast-message');
+
+    const btnClearAll = document.getElementById('btn-clear-all');
+    const btnDownloadZip = document.getElementById('btn-download-zip');
+    const btnCopyJson = document.getElementById('btn-copy-json');
+    const btnPackGrid = document.getElementById('btn-pack-grid');
+    const btnSaveSinglePng = document.getElementById('btn-save-single-png');
+    
+    const viewModeGrid = document.getElementById('view-mode-grid');
+    const viewModeAtlas = document.getElementById('view-mode-atlas');
+
+    const selectionBanner = document.getElementById('selection-banner');
+    const selectedItemName = document.getElementById('selected-item-name');
+    const btnCancelSelection = document.getElementById('btn-cancel-selection');
+
+    const tabBtns = {
+      canvas: document.getElementById('tab-btn-canvas'),
+      json: document.getElementById('tab-btn-json'),
+      exporter: document.getElementById('tab-btn-exporter')
+    };
+
+    const tabContents = {
+      canvas: document.getElementById('tab-content-canvas'),
+      json: document.getElementById('tab-content-json'),
+      exporter: document.getElementById('tab-content-exporter')
+    };
+
+    /* 初期化 */
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      setupEventListeners();
+      renderApp();
+    });
+
+    function setupEventListeners() {
+      // ファイル選択・ドラッグ
+      dropZone.addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', handleFileSelect);
+
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('border-brand-500', 'bg-brand-500/10');
+      });
+
+      dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('border-brand-500', 'bg-brand-500/10');
+      });
+
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('border-brand-500', 'bg-brand-500/10');
+        if (e.dataTransfer.files.length > 0) {
+          addImages(Array.from(e.dataTransfer.files));
+        }
+      });
+
+      // 設定更新
+      inputTileWidth.addEventListener('change', () => {
+        state.tileWidth = parseInt(inputTileWidth.value, 10) || 32;
+        renderApp();
+      });
+
+      inputTileHeight.addEventListener('change', () => {
+        state.tileHeight = parseInt(inputTileHeight.value, 10) || 32;
+        renderApp();
+      });
+
+      inputCols.addEventListener('change', () => {
+        state.cols = parseInt(inputCols.value, 10) || 10;
+        renderApp();
+      });
+
+      inputRows.addEventListener('change', () => {
+        state.minRows = parseInt(inputRows.value, 10) || 1;
+        renderApp();
+      });
+
+      selectCoordType.addEventListener('change', (e) => {
+        state.coordType = e.target.value;
+        renderApp();
+      });
+
+      checkAutoSize.addEventListener('change', (e) => {
+        state.autoSetTileSize = e.target.checked;
+      });
+
+      checkStripExt.addEventListener('change', (e) => {
+        state.stripExt = e.target.checked;
+        renderApp();
+      });
+
+      checkIncludeMeta.addEventListener('change', (e) => {
+        state.includeAiMeta = e.target.checked;
+        renderApp();
+      });
+
+      // タブ切替
+      Object.keys(tabBtns).forEach(tab => {
+        tabBtns[tab].addEventListener('click', () => switchTab(tab));
+      });
+
+      // ビューモード切り替え (配置編集 vs 最終合成画像)
+      viewModeGrid.addEventListener('click', () => setViewMode('grid'));
+      viewModeAtlas.addEventListener('click', () => setViewMode('atlas'));
+
+      // ズームボタン選択
+      document.querySelectorAll('.zoom-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          document.querySelectorAll('.zoom-btn').forEach(b => {
+            b.classList.remove('active', 'bg-brand-500/20', 'text-brand-400');
+            b.classList.add('text-slate-400');
+          });
+          e.target.classList.add('active', 'bg-brand-500/20', 'text-brand-400');
+          e.target.classList.remove('text-slate-400');
+
+          state.zoomLevel = parseInt(e.target.dataset.zoom, 10) || 1;
+          updateAtlasZoom();
+        });
+      });
+
+      // 詰めて配置
+      btnPackGrid.addEventListener('click', () => {
+        state.images.forEach((img, idx) => {
+          img.slotIndex = idx;
+        });
+        renderApp();
+        showStatus('左上に詰めて配置し直しました');
+      });
+
+      // 選択解除
+      btnCancelSelection.addEventListener('click', () => {
+        state.selectedImgId = null;
+        renderApp();
+        showStatus('選択を解除しました');
+      });
+
+      // クリア・ダウンロード・コピー
+      btnClearAll.addEventListener('click', () => {
+        if (state.images.length === 0) return;
+        state.images = [];
+        state.selectedImgId = null;
+        renderApp();
+        showStatus('すべての画像をクリアしました');
+      });
+
+      btnDownloadZip.addEventListener('click', downloadZip);
+
+      btnSaveSinglePng.addEventListener('click', () => {
+        if (state.images.length === 0) return;
+        drawAtlas();
+        const a = document.createElement('a');
+        a.href = atlasCanvas.toDataURL('image/png');
+        a.download = 'tilesheet.png';
+        a.click();
+        showStatus('統合画像 (tilesheet.png) をダウンロードしました');
+      });
+
+      btnCopyJson.addEventListener('click', () => {
+        const text = jsonPreview.textContent;
+        navigator.clipboard ? navigator.clipboard.writeText(text) : document.execCommand('copy');
+        showStatus('JSONをクリップボードにコピーしました');
+      });
+
+      // エンジンコード選択
+      document.querySelectorAll('.engine-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          document.querySelectorAll('.engine-btn').forEach(b => {
+            b.classList.remove('active', 'bg-brand-500/20', 'text-brand-400', 'border-brand-500/30');
+            b.classList.add('text-slate-400', 'border-transparent');
+          });
+          e.target.classList.add('active', 'bg-brand-500/20', 'text-brand-400', 'border-brand-500/30');
+          e.target.classList.remove('text-slate-400', 'border-transparent');
+          state.selectedEngine = e.target.dataset.engine;
+          renderCodeExporter();
+        });
+      });
+    }
+
+    function handleFileSelect(e) {
+      if (e.target.files.length > 0) {
+        addImages(Array.from(e.target.files));
+        fileInput.value = '';
+      }
+    }
+
+    function addImages(files) {
+      const imageFiles = files.filter(f => f.type.startsWith('image/'));
+      if (imageFiles.length === 0) return;
+
+      const isFirstBatch = state.images.length === 0;
+
+      let loadedCount = 0;
+      imageFiles.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const imgObj = new Image();
+          imgObj.onload = () => {
+            // 画像が登録されていない状態で最初に読み込まれた画像サイズをタイルサイズに自動設定 (オプションON時のみ)
+            if (isFirstBatch && loadedCount === 0 && state.autoSetTileSize) {
+              state.tileWidth = imgObj.width;
+              state.tileHeight = imgObj.height;
+              inputTileWidth.value = imgObj.width;
+              inputTileHeight.value = imgObj.height;
+            }
+
+            // 最短の空きスロットインデックスを探す
+            const occupiedSlots = new Set(state.images.map(i => i.slotIndex));
+            let nextSlot = 0;
+            while (occupiedSlots.has(nextSlot)) {
+              nextSlot++;
+            }
+
+            state.images.push({
+              id: 'img_' + Math.random().toString(36).substr(2, 9),
+              file: file,
+              name: file.name,
+              imgObj: imgObj,
+              width: imgObj.width,
+              height: imgObj.height,
+              slotIndex: nextSlot
+            });
+
+            loadedCount++;
+            if (loadedCount === imageFiles.length) {
+              renderApp();
+              showStatus(`${imageFiles.length} 枚の画像を追加しました（タイルサイズ: ${state.tileWidth}x${state.tileHeight}px）`);
+            }
+          };
+          imgObj.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function moveImageToSlot(imageId, targetSlotIndex) {
+      const targetImg = state.images.find(i => i.slotIndex === targetSlotIndex);
+      const sourceImg = state.images.find(i => i.id === imageId);
+
+      if (sourceImg) {
+        if (targetImg && targetImg.id !== imageId) {
+          // 交換（スワップ）
+          targetImg.slotIndex = sourceImg.slotIndex;
+        }
+        sourceImg.slotIndex = targetSlotIndex;
+        renderApp();
+        showStatus('タイルの配置を変更しました');
+      }
+    }
+
+    function calculateCanvasGrid() {
+      let maxSlot = -1;
+      state.images.forEach(img => {
+        if (img.slotIndex > maxSlot) maxSlot = img.slotIndex;
+      });
+
+      const requiredRows = maxSlot >= 0 ? Math.ceil((maxSlot + 1) / state.cols) : 1;
+      // 自動での予備行(+1)追加を完全に廃止し、設定された行数または画像配置に必要な最小行数をそのまま採用
+      const displayRows = Math.max(state.minRows || 1, requiredRows);
+      const totalGridCells = state.cols * displayRows;
+      const canvasWidth = state.cols * state.tileWidth;
+      const canvasHeight = displayRows * state.tileHeight;
+
+      return { cols: state.cols, rows: displayRows, totalSlots: totalGridCells, canvasWidth, canvasHeight };
+    }
+
+    function renderApp() {
+      updateUIState();
+      renderImageList();
+      renderInteractiveGrid();
+      drawAtlas();
+      renderJsonPreview();
+      renderCodeExporter();
+    }
+
+    function updateUIState() {
+      imageCountBadge.textContent = `${state.images.length} 件`;
+      btnClearAll.disabled = state.images.length === 0;
+      btnDownloadZip.disabled = state.images.length === 0;
+    }
+
+    function setViewMode(mode) {
+      state.viewMode = mode;
+      if (mode === 'grid') {
+        viewModeGrid.classList.add('bg-slate-800', 'text-brand-400');
+        viewModeGrid.classList.remove('text-slate-400');
+        viewModeAtlas.classList.remove('bg-slate-800', 'text-brand-400');
+        viewModeAtlas.classList.add('text-slate-400');
+
+        interactiveGridContainer.classList.remove('hidden');
+        atlasPreviewContainer.classList.add('hidden');
+        gridHelpText.classList.remove('hidden');
+      } else {
+        viewModeAtlas.classList.add('bg-slate-800', 'text-brand-400');
+        viewModeAtlas.classList.remove('text-slate-400');
+        viewModeGrid.classList.remove('bg-slate-800', 'text-brand-400');
+        viewModeGrid.classList.add('text-slate-400');
+
+        interactiveGridContainer.classList.add('hidden');
+        atlasPreviewContainer.classList.remove('hidden');
+        gridHelpText.classList.add('hidden');
+        selectionBanner.classList.add('hidden');
+
+        drawAtlas();
+      }
+    }
+
+    function switchTab(tab) {
+      state.activeTab = tab;
+      Object.keys(tabBtns).forEach(t => {
+        if (t === tab) {
+          tabBtns[t].classList.add('bg-brand-500/20', 'text-brand-400', 'border-brand-500/30');
+          tabBtns[t].classList.remove('text-slate-400', 'border-transparent');
+          tabContents[t].classList.remove('hidden');
+        } else {
+          tabBtns[t].classList.remove('bg-brand-500/20', 'text-brand-400', 'border-brand-500/30');
+          tabBtns[t].classList.add('text-slate-400', 'border-transparent');
+          tabContents[t].classList.add('hidden');
+        }
+      });
+    }
+
+    function renderImageList() {
+      if (state.images.length === 0) {
+        imageList.innerHTML = `<div class="text-center py-8 text-xs text-slate-500">画像がまだ読み込まれていません</div>`;
+        return;
+      }
+
+      imageList.innerHTML = '';
+      state.images.forEach(img => {
+        const item = document.createElement('div');
+        const isSelected = state.selectedImgId === img.id;
+
+        item.className = `flex items-center justify-between p-2 rounded-lg border text-xs transition cursor-pointer select-none ${
+          isSelected 
+            ? 'bg-ai-900/40 border-ai-500 text-ai-200' 
+            : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 text-slate-300'
+        }`;
+
+        item.innerHTML = `
+          <div class="flex items-center gap-2 min-w-0">
+            <img src="${img.imgObj.src}" class="w-7 h-7 object-contain bg-slate-900 rounded border border-slate-800">
+            <div class="truncate">
+              <div class="font-medium truncate text-[11px]">${escapeHtml(img.name)}</div>
+              <div class="text-[9px] text-slate-500 font-mono">${img.width}x${img.height}px</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-1">
+            <button data-id="${img.id}" class="btn-delete p-1 text-slate-500 hover:text-rose-400 rounded transition">
+              <i data-lucide="x" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `;
+
+        item.addEventListener('click', (e) => {
+          if (e.target.closest('.btn-delete')) return;
+          state.selectedImgId = state.selectedImgId === img.id ? null : img.id;
+          renderApp();
+        });
+
+        item.querySelector('.btn-delete').addEventListener('click', (e) => {
+          e.stopPropagation();
+          state.images = state.images.filter(i => i.id !== img.id);
+          if (state.selectedImgId === img.id) state.selectedImgId = null;
+          renderApp();
+          showStatus('画像を削除しました');
+        });
+
+        imageList.appendChild(item);
+      });
+
+      lucide.createIcons({ props: { scope: imageList } });
+    }
+
+    function renderInteractiveGrid() {
+      const { cols, rows, totalSlots, canvasWidth, canvasHeight } = calculateCanvasGrid();
+
+      canvasSizeInfo.textContent = `${canvasWidth} x ${canvasHeight} px (${cols}列 x ${rows}行)`;
+
+      gridOverlay.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+      gridOverlay.innerHTML = '';
+
+      // 選択状態バナーの更新
+      if (state.selectedImgId && state.viewMode === 'grid') {
+        const selectedImg = state.images.find(i => i.id === state.selectedImgId);
+        if (selectedImg) {
+          selectedItemName.textContent = `「${selectedImg.name}」を選択中`;
+          selectionBanner.classList.remove('hidden');
+        } else {
+          selectionBanner.classList.add('hidden');
+        }
+      } else {
+        selectionBanner.classList.add('hidden');
+      }
+
+      // スロット単位の画像マップ
+      const slotMap = {};
+      state.images.forEach(img => {
+        slotMap[img.slotIndex] = img;
+      });
+
+      for (let slotIndex = 0; slotIndex < totalSlots; slotIndex++) {
+        const cell = document.createElement('div');
+        const imgItem = slotMap[slotIndex];
+        const isSelected = imgItem && state.selectedImgId === imgItem.id;
+
+        cell.className = `grid-cell relative rounded flex items-center justify-center transition-all checkerboard cursor-pointer border select-none border-slate-800/80 hover:border-brand-500/80 ${isSelected ? 'selected-cell' : ''}`;
+        
+        // プレビューのセルサイズ
+        const cellDisplayWidth = Math.min(64, Math.max(32, state.tileWidth));
+        const cellDisplayHeight = Math.min(64, Math.max(32, state.tileHeight));
+
+        cell.style.width = `${cellDisplayWidth}px`;
+        cell.style.height = `${cellDisplayHeight}px`;
+        cell.dataset.slotIndex = slotIndex;
+
+        if (imgItem) {
+          cell.innerHTML = `
+            <img src="${imgItem.imgObj.src}" class="w-full h-full object-contain pointer-events-none rounded">
+            <span class="absolute bottom-0.5 right-0.5 text-[8px] bg-slate-900/90 text-slate-300 px-1 rounded font-mono leading-none pointer-events-none border border-slate-800">${escapeHtml(imgItem.name.substring(0, 5))}</span>
+          `;
+          cell.draggable = true;
+        } else {
+          const colNum = (slotIndex % cols) + (state.coordType === '1-based' ? 1 : 0);
+          const rowNum = Math.floor(slotIndex / cols) + (state.coordType === '1-based' ? 1 : 0);
+          cell.innerHTML = `<span class="text-[9px] text-slate-600 font-mono select-none pointer-events-none">${colNum},${rowNum}</span>`;
+        }
+
+        // ドラッグ＆ドロップ イベント処理
+        let startX = 0;
+        let startY = 0;
+
+        cell.addEventListener('mousedown', (e) => {
+          startX = e.clientX;
+          startY = e.clientY;
+        });
+
+        cell.addEventListener('dragstart', (e) => {
+          if (imgItem) {
+            state.draggedImgId = imgItem.id;
+            e.dataTransfer.setData('text/plain', imgItem.id);
+            e.dataTransfer.effectAllowed = 'move';
+            cell.classList.add('opacity-40');
+          } else {
+            e.preventDefault();
+          }
+        });
+
+        cell.addEventListener('dragend', () => {
+          state.draggedImgId = null;
+          cell.classList.remove('opacity-40');
+        });
+
+        cell.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          if (!cell.classList.contains('drag-over')) {
+            cell.classList.add('drag-over');
+          }
+        });
+
+        cell.addEventListener('dragleave', (e) => {
+          if (!cell.contains(e.relatedTarget)) {
+            cell.classList.remove('drag-over');
+          }
+        });
+
+        cell.addEventListener('drop', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          cell.classList.remove('drag-over');
+
+          const draggedId = state.draggedImgId || e.dataTransfer.getData('text/plain');
+          const targetSlotIndex = parseInt(cell.dataset.slotIndex, 10);
+
+          if (draggedId && !isNaN(targetSlotIndex)) {
+            moveImageToSlot(draggedId, targetSlotIndex);
+            state.draggedImgId = null;
+          }
+        });
+
+        cell.addEventListener('click', (e) => {
+          const moveDist = Math.hypot(e.clientX - startX, e.clientY - startY);
+          if (moveDist > 5) return;
+
+          const targetSlotIndex = parseInt(cell.dataset.slotIndex, 10);
+
+          if (state.selectedImgId) {
+            if (imgItem && imgItem.id === state.selectedImgId) {
+              state.selectedImgId = null;
+              showStatus('選択を解除しました');
+            } else {
+              moveImageToSlot(state.selectedImgId, targetSlotIndex);
+              state.selectedImgId = null;
+            }
+            renderApp();
+          } else if (imgItem) {
+            state.selectedImgId = imgItem.id;
+            showStatus(`「${imgItem.name}」を選択中。移動先のセルをクリックしてください。`);
+            renderApp();
+          }
+        });
+
+        gridOverlay.appendChild(cell);
+      }
+
+      lucide.createIcons({ props: { scope: selectionBanner } });
+    }
+
+    function drawAtlas() {
+      const { cols, rows, canvasWidth, canvasHeight } = calculateCanvasGrid();
+
+      atlasCanvas.width = canvasWidth;
+      atlasCanvas.height = canvasHeight;
+
+      const ctx = atlasCanvas.getContext('2d');
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+      state.images.forEach(img => {
+        const col = img.slotIndex % cols;
+        const row = Math.floor(img.slotIndex / cols);
+        const dx = col * state.tileWidth;
+        const dy = row * state.tileHeight;
+
+        ctx.drawImage(img.imgObj, dx, dy, state.tileWidth, state.tileHeight);
+      });
+
+      // 最終合成画像を <img> にセットして拡大率調整
+      const dataUrl = atlasCanvas.toDataURL('image/png');
+      atlasResultImg.src = dataUrl;
+      updateAtlasZoom();
+    }
+
+    function updateAtlasZoom() {
+      const { canvasWidth, canvasHeight } = calculateCanvasGrid();
+      const zoom = state.zoomLevel;
+      atlasResultImg.style.width = `${canvasWidth * zoom}px`;
+      atlasResultImg.style.height = `${canvasHeight * zoom}px`;
+    }
+
+    function generateMappingJson() {
+      const { cols, rows } = calculateCanvasGrid();
+      const mapping = {};
+
+      if (state.includeAiMeta) {
+        mapping["meta"] = {
+          image: "tilesheet.png",
+          cols: cols,
+          rows: rows,
+          tileWidth: state.tileWidth,
+          tileHeight: state.tileHeight,
+          totalTiles: state.images.length
+        };
+      }
+
+      state.images.forEach(img => {
+        let key = img.name;
+        if (state.stripExt) {
+          key = key.replace(/\.[^/.]+$/, "");
+        }
+
+        const col = img.slotIndex % cols;
+        const row = Math.floor(img.slotIndex / cols);
+
+        let xVal = col;
+        let yVal = row;
+
+        if (state.coordType === '1-based') {
+          xVal = col + 1;
+          yVal = row + 1;
+        } else if (state.coordType === 'pixel') {
+          xVal = col * state.tileWidth;
+          yVal = row * state.tileHeight;
+        }
+
+        mapping[key] = { x: xVal, y: yVal };
+      });
+
+      return mapping;
+    }
+
+    function renderJsonPreview() {
+      const jsonObj = generateMappingJson();
+      jsonPreview.textContent = JSON.stringify(jsonObj, null, 2);
+    }
+
+    function renderCodeExporter() {
+      const { cols, rows } = calculateCanvasGrid();
+      const offset = state.coordType === '1-based' ? 1 : 0;
+      let code = "";
+
+      if (state.selectedEngine === 'phaser') {
+        code = `// Phaser 3 Spritesheet Loader Example
+this.load.spritesheet('tileset', 'tilesheet.png', {
+  frameWidth: ${state.tileWidth},
+  frameHeight: ${state.tileHeight}
+});
+
+// Accessing tile by key mapping:
+const mapData = await fetch('tilesheet.json').then(res => res.json());
+function getTileFrame(key: string): number {
+  const tile = mapData[key];
+  if (!tile) return 0;
+  return (tile.y - ${offset}) * ${cols} + (tile.x - ${offset});
+}`;
+      } else if (state.selectedEngine === 'typescript') {
+        code = `// TypeScript (PixiJS / WebGL) TileSheet Manager
+import { Texture, Rectangle, Sprite } from 'pixi.js';
+
+export interface TileLocation {
+  x: number;
+  y: number;
+}
+
+export interface TileSheetMeta {
+  image: string;
+  cols: number;
+  rows: number;
+  tileWidth: number;
+  tileHeight: number;
+  totalTiles: number;
+}
+
+export interface TileSheetData {
+  meta?: TileSheetMeta;
+  [key: string]: TileLocation | TileSheetMeta | undefined;
+}
+
+export class TileSheetLoader {
+  private baseTexture: Texture;
+  private mapData: TileSheetData;
+  private tileWidth: number;
+  private tileHeight: number;
+
+  constructor(baseTexture: Texture, mapData: TileSheetData) {
+    this.baseTexture = baseTexture;
+    this.mapData = mapData;
+    this.tileWidth = mapData.meta?.tileWidth ?? ${state.tileWidth};
+    this.tileHeight = mapData.meta?.tileHeight ?? ${state.tileHeight};
+  }
+
+  public getTileTexture(key: string): Texture | null {
+    const tile = this.mapData[key] as TileLocation | undefined;
+    if (!tile) return null;
+
+    const col = ${state.coordType === 'pixel' ? `tile.x / ${state.tileWidth}` : `tile.x - ${offset}`};
+    const row = ${state.coordType === 'pixel' ? `tile.y / ${state.tileHeight}` : `tile.y - ${offset}`};
+
+    const frame = new Rectangle(
+      col * this.tileWidth,
+      row * this.tileHeight,
+      this.tileWidth,
+      this.tileHeight
+    );
+
+    return new Texture({ source: this.baseTexture.source, frame });
+  }
+
+  public createSprite(key: string): Sprite | null {
+    const texture = this.getTileTexture(key);
+    return texture ? new Sprite(texture) : null;
+  }
+}`;
+      } else if (state.selectedEngine === 'unity') {
+        code = `// Unity C# Tile Mapping Data Model
+using System;
+using UnityEngine;
+
+[Serializable]
+public class TileCoord {
+    public int x;
+    public int y;
+}
+
+[Serializable]
+public class TileSheetMeta {
+    public string image;
+    public int cols;
+    public int rows;
+    public int tileWidth;
+    public int tileHeight;
+}`;
+      } else if (state.selectedEngine === 'godot') {
+        code = `# Godot 4 TileSet Atlas Source Helper
+var tile_width = ${state.tileWidth}
+var tile_height = ${state.tileHeight}
+
+func get_tile_atlas_coords(key: String, map_data: Dictionary) -> Vector2i:
+    if map_data.has(key):
+        var t = map_data[key]
+        return Vector2i(t.x - ${offset}, t.y - ${offset})
+    return Vector2i.ZERO`;
+      } else {
+        code = `// HTML5 Canvas Sprite Drawing Helper
+const img = new Image();
+img.src = 'tilesheet.png';
+
+function drawTile(ctx, key, mapData, destX, destY) {
+  const tile = mapData[key];
+  if (!tile) return;
+  const srcX = (tile.x - ${offset}) * ${state.tileWidth};
+  const srcY = (tile.y - ${offset}) * ${state.tileHeight};
+  ctx.drawImage(img, srcX, srcY, ${state.tileWidth}, ${state.tileHeight}, destX, destY, ${state.tileWidth}, ${state.tileHeight});
+}`;
+      }
+
+      codePreview.textContent = code;
+    }
+
+    async function downloadZip() {
+      if (state.images.length === 0) {
+        showStatus('ダウンロードする画像がありません');
+        return;
+      }
+
+      drawAtlas();
+
+      const zip = new JSZip();
+      
+      // キャンバスをPNG Blobに変換
+      const canvasBlob = await new Promise(resolve => atlasCanvas.toBlob(resolve, 'image/png'));
+      zip.file("tilesheet.png", canvasBlob);
+
+      // JSONマッピングデータ
+      const jsonObj = generateMappingJson();
+      zip.file("tilesheet.json", JSON.stringify(jsonObj, null, 2));
+
+      // ZIP生成＆ダウンロード
+      const content = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = "tilesheet_pack.zip";
+      a.click();
+      URL.revokeObjectURL(url);
+
+      showStatus('ZIPアーカイブ（tilesheet.png & json）をダウンロードしました！');
+    }
+
+    /* ユーティリティ関数 */
+    function showStatus(msg) {
+      toastMessage.textContent = msg;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      toast.classList.add('translate-y-0', 'opacity-100');
+      setTimeout(() => {
+        toast.classList.remove('translate-y-0', 'opacity-100');
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 2500);
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, match => {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#039;'
+        }[match];
+      });
+    }
+  </script>
+</body>
+</html>

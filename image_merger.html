@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="ja" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>マルチ画像結合・レイアウトエディタ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1e293b;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #475569;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #64748b;
+    }
+    /* Transparent Checkerboard Pattern for Canvas Container */
+    .checkerboard-bg {
+      background-color: #0f172a;
+      background-image: 
+        linear-gradient(45deg, #1e293b 25%, transparent 25%), 
+        linear-gradient(-45deg, #1e293b 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #1e293b 75%), 
+        linear-gradient(-45deg, transparent 75%, #1e293b 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    }
+    .canvas-container {
+      margin: 0 auto !important;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+      border-radius: 4px;
+    }
+    /* Layer Item Dragging Styles */
+    .layer-item {
+      user-select: none;
+      transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+    }
+    .layer-item.dragging {
+      opacity: 0.4;
+      border-style: dashed;
+    }
+    .layer-item.drag-over {
+      border-top: 2px solid #6366f1;
+      background-color: rgba(99, 102, 241, 0.2) !important;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans overflow-hidden select-none">
+
+  <header class="h-14 bg-slate-800 border-b border-slate-700 flex items-center justify-between px-4 z-20 shrink-0">
+    <div class="flex items-center space-x-3">
+      <div class="bg-indigo-600 text-white p-2 rounded-lg flex items-center justify-center shadow-md">
+        <i class="fa-solid font-bold fa-layer-group text-lg"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-base tracking-wide text-white">ImageMerger Studio</h1>
+        <p class="text-xs text-slate-400">画像一括合成・自由配置・キャンバス自動拡張ツール</p>
+      </div>
+    </div>
+
+    <!-- Quick Global Actions -->
+    <div class="flex items-center space-x-2">
+      <button id="btn-clear-all" class="px-3 py-1.5 bg-rose-900/40 hover:bg-rose-800/60 text-rose-300 border border-rose-700/50 rounded-md text-xs font-medium transition flex items-center gap-1.5">
+        <i class="fa-solid fa-trash-can"></i> <span>すべて全消去</span>
+      </button>
+      <div class="h-5 w-[1px] bg-slate-700 mx-1"></div>
+      <button id="btn-quick-export" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs rounded-md shadow-md transition flex items-center gap-1.5">
+        <i class="fa-solid fa-download"></i> <span>画像を保存</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- Left Sidebar: Management Panel -->
+    <aside class="w-80 bg-slate-800/90 border-r border-slate-700/80 flex flex-col shrink-0 z-10">
+      
+      <!-- Tab Navigation Buttons -->
+      <div class="grid grid-cols-4 bg-slate-900/60 p-1 border-b border-slate-700 text-xs text-slate-400 font-medium">
+        <button id="tab-btn-add" class="tab-btn py-2 rounded text-center transition flex flex-col items-center gap-1 text-indigo-400 bg-slate-800 font-semibold" onclick="switchTab('add')">
+          <i class="fa-solid fa-plus text-sm"></i>
+          <span>追加</span>
+        </button>
+        <button id="tab-btn-layers" class="tab-btn py-2 rounded text-center transition flex flex-col items-center gap-1 hover:text-slate-200" onclick="switchTab('layers')">
+          <i class="fa-solid fa-list-check text-sm"></i>
+          <span>層・選択</span>
+        </button>
+        <button id="tab-btn-canvas" class="tab-btn py-2 rounded text-center transition flex flex-col items-center gap-1 hover:text-slate-200" onclick="switchTab('canvas')">
+          <i class="fa-solid fa-sliders text-sm"></i>
+          <span>キャンバス</span>
+        </button>
+        <button id="tab-btn-export" class="tab-btn py-2 rounded text-center transition flex flex-col items-center gap-1 hover:text-slate-200" onclick="switchTab('export')">
+          <i class="fa-solid fa-file-export text-sm"></i>
+          <span>保存</span>
+        </button>
+      </div>
+
+      <!-- Tab Contents Container -->
+      <div class="flex-1 overflow-y-auto p-4 space-y-5">
+
+        <!-- TAB 1: ADD IMAGES -->
+        <div id="tab-content-add" class="tab-content space-y-4">
+          <div>
+            <h2 class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">画像ファイルのロード</h2>
+            
+            <!-- Drag & Drop Zone -->
+            <div id="drop-zone" class="border-2 border-dashed border-indigo-500/50 hover:border-indigo-400 bg-slate-900/50 hover:bg-slate-900/80 rounded-xl p-5 text-center cursor-pointer transition flex flex-col items-center justify-center space-y-2 group">
+              <div class="w-12 h-12 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 group-hover:scale-110 transition">
+                <i class="fa-solid fa-cloud-arrow-up text-xl"></i>
+              </div>
+              <p class="text-xs text-slate-300 font-medium">ここに画像をドラッグ＆ドロップ</p>
+              <p class="text-[10px] text-slate-500">または クリックしてファイルを選択 (複数選択可)</p>
+              <span class="inline-block px-2 py-0.5 bg-slate-800 text-[10px] text-indigo-300 rounded border border-indigo-900">PNG, JPG, WEBP, GIF, SVG</span>
+              <input type="file" id="file-input" multiple accept="image/*" class="hidden">
+            </div>
+          </div>
+
+          <!-- Preset Helpers / Info -->
+          <div class="p-3 bg-slate-900/40 rounded-lg border border-slate-700/50 space-y-2">
+            <h3 class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+              <i class="fa-solid fa-lightbulb text-amber-400"></i> 操作ヒント
+            </h3>
+            <ul class="text-[11px] text-slate-400 space-y-1.5 pl-4 list-disc">
+              <li>右側キャンバスへ直接画像をドロップして追加できます。</li>
+              <li>画像をドラッグ移動・変形すると、<b>画像全体に合わせてキャンバスが自動伸縮</b>します。</li>
+              <li>レイヤー項目を<b>ドラッグ＆ドロップして重ね順を自由に入れ替え</b>できます（右側の上下ボタンでも可）。</li>
+              <li>点線枠内が<b>保存対象領域</b>です。枠外の作業余白は保存時に自動的にクロップ除去（透明化）されます。</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- TAB 2: LAYER & SELECTED IMAGE -->
+        <div id="tab-content-layers" class="tab-content hidden space-y-5">
+          <!-- Selection Status Bar -->
+          <div id="no-selection-msg" class="p-4 bg-slate-900/40 border border-slate-700/50 rounded-lg text-center text-xs text-slate-400">
+            <i class="fa-solid fa-arrow-pointer text-slate-500 mb-1 block text-base"></i>
+            キャンバス上の画像または下部一覧から画像を選択してください
+          </div>
+
+          <!-- Active Object Controls -->
+          <div id="selected-object-controls" class="hidden space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-700 pb-2">
+              <span class="text-xs font-bold text-indigo-400 flex items-center gap-1.5">
+                <i class="fa-solid fa-pen-to-square"></i> 選択中画像の操作
+              </span>
+              <div class="flex items-center gap-1">
+                <button id="btn-reset-selected" class="text-xs text-slate-300 hover:text-white bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded transition flex items-center gap-1" title="変形・回転・不透明度を初期化">
+                  <i class="fa-solid fa-rotate-left text-[10px]"></i> 変形リセット
+                </button>
+                <button id="btn-delete-selected" class="text-xs text-rose-400 hover:text-rose-300 bg-rose-950/40 hover:bg-rose-900/60 px-2 py-1 rounded border border-rose-800/50 transition">
+                  <i class="fa-solid fa-trash-can"></i> 削除
+                </button>
+              </div>
+            </div>
+
+            <!-- Layer Order Actions -->
+            <div>
+              <label class="text-[11px] font-semibold text-slate-400 mb-1.5 block">重ね順の変更 (ボタン操作)</label>
+              <div class="grid grid-cols-4 gap-1">
+                <button id="btn-z-top" class="py-1.5 bg-slate-700 hover:bg-slate-600 text-xs rounded text-slate-200 transition" title="最前面へ移動">
+                  <i class="fa-solid fa-angles-up"></i> 最前面
+                </button>
+                <button id="btn-z-up" class="py-1.5 bg-slate-700 hover:bg-slate-600 text-xs rounded text-slate-200 transition" title="1つ前面へ">
+                  <i class="fa-solid fa-angle-up"></i> 前面
+                </button>
+                <button id="btn-z-down" class="py-1.5 bg-slate-700 hover:bg-slate-600 text-xs rounded text-slate-200 transition" title="1つ背面へ">
+                  <i class="fa-solid fa-angle-down"></i> 背面
+                </button>
+                <button id="btn-z-bottom" class="py-1.5 bg-slate-700 hover:bg-slate-600 text-xs rounded text-slate-200 transition" title="最背面へ移動">
+                  <i class="fa-solid fa-angles-down"></i> 最背面
+                </button>
+              </div>
+            </div>
+
+            <!-- Transformations (Flip, Rotate, Opacity) -->
+            <div class="space-y-3 pt-2">
+              <label class="text-[11px] font-semibold text-slate-400 block">反転・変形・トリミング</label>
+              
+              <!-- Crop Button -->
+              <div class="mb-2">
+                <button id="btn-start-crop" class="w-full py-2 bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/50 text-xs rounded text-indigo-200 transition flex items-center justify-center gap-2">
+                  <i class="fa-solid fa-crop-simple"></i> 画像をクロップ (切り抜き)
+                </button>
+              </div>
+              
+              <!-- Crop Actions (Hidden by default) -->
+              <div id="crop-actions-group" class="hidden flex items-center gap-2 bg-indigo-900/40 p-2 rounded border border-indigo-500/50 mb-2">
+                <button id="btn-apply-crop" class="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs rounded transition flex items-center justify-center gap-1">
+                  <i class="fa-solid fa-check"></i> 確定
+                </button>
+                <button id="btn-cancel-crop" class="flex-1 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs rounded transition flex items-center justify-center gap-1">
+                  <i class="fa-solid fa-xmark"></i> キャンセル
+                </button>
+              </div>
+
+              <div class="grid grid-cols-2 gap-2">
+                <button id="btn-flip-x" class="py-1.5 bg-slate-700 hover:bg-slate-600 text-xs rounded text-slate-200 transition flex items-center justify-center gap-1">
+                  <i class="fa-solid fa-arrows-left-right"></i> 左右反転
+                </button>
+                <button id="btn-flip-y" class="py-1.5 bg-slate-700 hover:bg-slate-600 text-xs rounded text-slate-200 transition flex items-center justify-center gap-1">
+                  <i class="fa-solid fa-arrows-up-down"></i> 上下反転
+                </button>
+              </div>
+
+              <!-- Scale slider -->
+              <div>
+                <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                  <span>拡大・縮小</span>
+                  <span id="scale-val-txt">100%</span>
+                </div>
+                <input type="range" id="input-scale" min="10" max="300" value="100" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+              </div>
+
+              <!-- Rotation Slider -->
+              <div>
+                <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                  <span>回転角度</span>
+                  <span id="rotate-val-txt">0°</span>
+                </div>
+                <input type="range" id="input-rotate" min="0" max="360" value="0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+              </div>
+
+              <!-- Opacity Slider -->
+              <div>
+                <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                  <span>不透明度</span>
+                  <span id="opacity-val-txt">100%</span>
+                </div>
+                <input type="range" id="input-opacity" min="0" max="100" value="100" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+              </div>
+            </div>
+          </div>
+
+          <div class="pt-2 border-t border-slate-700/80">
+            <div class="flex items-center justify-between mb-2">
+              <h2 class="text-xs uppercase font-bold text-slate-400 tracking-wider">レイヤー一覧</h2>
+              <span class="text-[10px] text-indigo-400"><i class="fa-solid fa-arrows-up-down mr-1"></i>ドラッグまたはボタンで並べ替え</span>
+            </div>
+            <div id="layers-list" class="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+              <!-- Dynamically populated layer items -->
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: CANVAS SETTINGS -->
+        <div id="tab-content-canvas" class="tab-content hidden space-y-4">
+          <!-- Auto Resize Toggle -->
+          <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-700/60 space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="text-xs font-bold text-slate-200 block">自動キャンバス拡張</label>
+                <p class="text-[10px] text-slate-400">画像配置に合わせてキャンバスサイズを自動調整</p>
+              </div>
+              <input type="checkbox" id="toggle-auto-resize" checked class="w-4 h-4 text-indigo-600 rounded bg-slate-700 border-slate-600 focus:ring-indigo-500 accent-indigo-500 cursor-pointer">
+            </div>
+
+            <!-- Canvas Export Padding Adjustment -->
+            <div id="padding-control-group">
+              <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                <span>出力時の外周余白 (Padding)</span>
+                <span id="padding-val-txt">0px</span>
+              </div>
+              <input type="range" id="input-canvas-padding" min="0" max="100" value="0" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+              <p class="text-[10px] text-slate-500 mt-1">※保存時に生成される画像の周囲に付与される余白です。</p>
+            </div>
+          </div>
+
+          <!-- Background Color Settings -->
+          <div class="p-3 bg-slate-900/60 rounded-xl border border-slate-700/60 space-y-3">
+            <h3 class="text-xs font-bold text-slate-200">キャンバス背景</h3>
+
+            <!-- Transparent Toggle -->
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-slate-300">背景を透明にする</span>
+              <input type="checkbox" id="toggle-bg-transparent" checked class="w-4 h-4 text-indigo-600 rounded bg-slate-700 border-slate-600 accent-indigo-500 cursor-pointer">
+            </div>
+
+            <!-- Color Picker -->
+            <div id="bg-color-picker-group" class="flex items-center justify-between pt-1 opacity-50 pointer-events-none transition">
+              <span class="text-xs text-slate-300">背景カラー指定</span>
+              <div class="flex items-center gap-2">
+                <input type="color" id="input-bg-color" value="#ffffff" class="w-8 h-8 rounded border-0 cursor-pointer bg-transparent">
+                <span id="bg-color-code" class="text-xs font-mono text-slate-400">#FFFFFF</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Current Manual Canvas Dimension Readout -->
+          <div class="p-3 bg-slate-900/40 rounded-lg border border-slate-700/50 space-y-2">
+            <div class="flex justify-between text-xs text-slate-300">
+              <span>保存時の実解像度 (コンテンツ範囲):</span>
+              <span id="canvas-size-readout" class="font-mono text-indigo-400 font-bold">0 x 0 px</span>
+            </div>
+            <button id="btn-manual-fit" class="w-full py-1.5 bg-slate-700 hover:bg-slate-600 text-xs text-slate-200 font-medium rounded transition">
+              <i class="fa-solid fa-compress text-slate-400 mr-1"></i> 画像範囲に手動フィット
+            </button>
+          </div>
+        </div>
+
+        <!-- TAB 4: EXPORT & SAVE -->
+        <div id="tab-content-export" class="tab-content hidden space-y-4">
+          <div class="space-y-3">
+            <h2 class="text-xs uppercase font-bold text-slate-400 tracking-wider">保存フォーマット設定</h2>
+
+            <!-- Format Select -->
+            <div>
+              <label class="text-xs text-slate-300 mb-1 block">ファイル形式</label>
+              <div class="grid grid-cols-3 gap-2">
+                <label class="cursor-pointer">
+                  <input type="radio" name="export-format" value="png" checked class="peer hidden">
+                  <div class="py-2 text-center text-xs font-medium rounded border border-slate-700 bg-slate-900 text-slate-300 peer-checked:border-indigo-500 peer-checked:bg-indigo-600/20 peer-checked:text-indigo-300 transition">
+                    PNG
+                  </div>
+                </label>
+                <label class="cursor-pointer">
+                  <input type="radio" name="export-format" value="jpeg" class="peer hidden">
+                  <div class="py-2 text-center text-xs font-medium rounded border border-slate-700 bg-slate-900 text-slate-300 peer-checked:border-indigo-500 peer-checked:bg-indigo-600/20 peer-checked:text-indigo-300 transition">
+                    JPEG
+                  </div>
+                </label>
+                <label class="cursor-pointer">
+                  <input type="radio" name="export-format" value="webp" class="peer hidden">
+                  <div class="py-2 text-center text-xs font-medium rounded border border-slate-700 bg-slate-900 text-slate-300 peer-checked:border-indigo-500 peer-checked:bg-indigo-600/20 peer-checked:text-indigo-300 transition">
+                    WEBP
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Resolution Multiplier -->
+            <div>
+              <label class="text-xs text-slate-300 mb-1 block">出力スケール（高画質化）</label>
+              <select id="select-export-scale" class="w-full bg-slate-900 border border-slate-700 rounded-md py-1.5 px-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                <option value="1">1x (標準解像度)</option>
+                <option value="2" selected>2x (高解像度 / レティナ)</option>
+                <option value="3">3x (超高解像度)</option>
+                <option value="4">4x (最高画質印刷向け)</option>
+              </select>
+            </div>
+
+            <!-- Quality Slider for JPEG/WEBP -->
+            <div id="quality-slider-container" class="hidden">
+              <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                <span>圧縮品質</span>
+                <span id="quality-val-txt">92%</span>
+              </div>
+              <input type="range" id="input-export-quality" min="10" max="100" value="92" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+            </div>
+
+            <!-- File Name Input -->
+            <div>
+              <label class="text-xs text-slate-300 mb-1 block">ファイル名</label>
+              <input type="text" id="input-filename" value="merged-image" class="w-full bg-slate-900 border border-slate-700 rounded-md py-1.5 px-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+            </div>
+
+            <!-- Save Action Button -->
+            <button id="btn-export-download" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm rounded-xl shadow-lg transition flex items-center justify-center gap-2 mt-4">
+              <i class="fa-solid fa-download"></i> <span>一枚の画像としてダウンロード</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </aside>
+
+    <main class="flex-1 bg-slate-950 flex flex-col relative overflow-hidden">
+      
+      <!-- Canvas Control Overlay Floating Toolbar -->
+      <div class="absolute top-4 right-4 z-10 flex items-center bg-slate-800/80 backdrop-blur border border-slate-700 rounded-lg p-1 space-x-1 shadow-lg text-xs">
+        <button id="btn-zoom-out" class="p-1.5 hover:bg-slate-700 text-slate-300 rounded" title="ズームアウト">
+          <i class="fa-solid fa-magnifying-glass-minus"></i>
+        </button>
+        <span id="zoom-level-txt" class="px-2 text-slate-400 font-mono text-[11px]">100%</span>
+        <button id="btn-zoom-in" class="p-1.5 hover:bg-slate-700 text-slate-300 rounded" title="ズームイン">
+          <i class="fa-solid fa-magnifying-glass-plus"></i>
+        </button>
+        <button id="btn-zoom-reset" class="p-1.5 hover:bg-slate-700 text-slate-300 rounded border-l border-slate-700 ml-1" title="画面サイズに合わせる">
+          <i class="fa-solid fa-expand"></i>
+        </button>
+      </div>
+
+      <!-- Scrollable Canvas Viewer Container -->
+      <div id="viewport-container" class="flex-1 overflow-auto checkerboard-bg p-12 flex items-center justify-center relative">
+        <!-- Fabric JS Canvas Element -->
+        <canvas id="main-canvas"></canvas>
+      </div>
+
+      <!-- Empty Canvas Drop Hint Overlay -->
+      <div id="empty-canvas-hint" class="absolute inset-0 pointer-events-none flex flex-col items-center justify-center text-slate-500 space-y-3 z-0">
+        <i class="fa-regular fa-images text-5xl opacity-40"></i>
+        <p class="text-sm font-medium">画像をドラッグ＆ドロップして配置を開始してください</p>
+      </div>
+
+      <!-- Global Drag & Drop Overlay Alert -->
+      <div id="drag-over-overlay" class="absolute inset-0 bg-indigo-900/60 backdrop-blur-sm border-4 border-dashed border-indigo-400 flex flex-col items-center justify-center text-white z-50 opacity-0 pointer-events-none transition-opacity duration-200">
+        <i class="fa-solid fa-cloud-arrow-up text-6xl mb-4 animate-bounce"></i>
+        <h2 class="text-2xl font-bold">画像をここにドロップ！</h2>
+        <p class="text-sm text-indigo-200 mt-1">複数の画像を一括で読み込めます</p>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    // Global Application State & References
+    let canvas = null;
+    let autoResizeEnabled = true;
+    let exportPadding = 0; // Padding used only during image download
+    const WORKING_MARGIN = 60; // Internal editing canvas margin to prevent control handles clipping
+    let isTransparent = true;
+    let currentZoom = 1;
+    let isExporting = false;
+    let isDraggingLayer = false;
+    
+    // Cropping State
+    let isCropping = false;
+    let cropRect = null;
+    let cropTargetImage = null;
+    let cropOverlay = null;
+
+    // DOM Elements
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const emptyHint = document.getElementById('empty-canvas-hint');
+    const dragOverlay = document.getElementById('drag-over-overlay');
+    const layersListEl = document.getElementById('layers-list');
+    
+    // Tab Elements
+    const tabBtns = {
+      add: document.getElementById('tab-btn-add'),
+      layers: document.getElementById('tab-btn-layers'),
+      canvas: document.getElementById('tab-btn-canvas'),
+      export: document.getElementById('tab-btn-export')
+    };
+    const tabContents = {
+      add: document.getElementById('tab-content-add'),
+      layers: document.getElementById('tab-content-layers'),
+      canvas: document.getElementById('tab-content-canvas'),
+      export: document.getElementById('tab-content-export')
+    };
+
+    // Controls
+    const selectedControls = document.getElementById('selected-object-controls');
+    const noSelectionMsg = document.getElementById('no-selection-msg');
+    const inputScale = document.getElementById('input-scale');
+    const inputRotate = document.getElementById('input-rotate');
+    const inputOpacity = document.getElementById('input-opacity');
+    const scaleValTxt = document.getElementById('scale-val-txt');
+    const rotateValTxt = document.getElementById('rotate-val-txt');
+    const opacityValTxt = document.getElementById('opacity-val-txt');
+    const toggleAutoResize = document.getElementById('toggle-auto-resize');
+    const toggleBgTransparent = document.getElementById('toggle-bg-transparent');
+    const inputBgColor = document.getElementById('input-bg-color');
+    const bgColorGroup = document.getElementById('bg-color-picker-group');
+    const bgColorCode = document.getElementById('bg-color-code');
+    const canvasSizeReadout = document.getElementById('canvas-size-readout');
+    const inputCanvasPadding = document.getElementById('input-canvas-padding');
+    const paddingValTxt = document.getElementById('padding-val-txt');
+    
+    // Crop Elements
+    const btnStartCrop = document.getElementById('btn-start-crop');
+    const cropActionsGroup = document.getElementById('crop-actions-group');
+    const btnApplyCrop = document.getElementById('btn-apply-crop');
+    const btnCancelCrop = document.getElementById('btn-cancel-crop');
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initCanvas();
+      setupEventListeners();
+      setupDragAndDrop();
+    });
+
+    function initCanvas() {
+      canvas = new fabric.Canvas('main-canvas', {
+        width: 600,
+        height: 400,
+        backgroundColor: null, // Always transparent workspace
+        preserveObjectStacking: true,
+        selection: true,
+        controlsAboveOverlay: true
+      });
+
+      // Fabric Object Control handles styling
+      fabric.Object.prototype.set({
+        transparentCorners: false,
+        cornerColor: '#6366f1',
+        cornerStrokeColor: '#ffffff',
+        borderColor: '#818cf8',
+        cornerSize: 10,
+        cornerStyle: 'circle',
+        padding: 4
+      });
+
+      // Custom background & boundary indicator rendering
+      // Layer architecture: Outer workspace (transparent) -> Export bounds rect (User BG color) -> Image objects
+      canvas.on('before:render', function() {
+        const ctx = canvas.getContext();
+        const objects = canvas.getObjects();
+        if (objects.length === 0) return;
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        objects.forEach(obj => {
+          const bound = obj.getBoundingRect(true);
+          if (bound.left < minX) minX = bound.left;
+          if (bound.top < minY) minY = bound.top;
+          if (bound.left + bound.width > maxX) maxX = bound.left + bound.width;
+          if (bound.top + bound.height > maxY) maxY = bound.top + bound.height;
+        });
+
+        if (minX === Infinity) return;
+
+        const contentW = maxX - minX;
+        const contentH = maxY - minY;
+
+        const bgLeft = minX - exportPadding;
+        const bgTop = minY - exportPadding;
+        const bgWidth = contentW + exportPadding * 2;
+        const bgHeight = contentH + exportPadding * 2;
+
+        ctx.save();
+
+        // 1. Render User Selected Background Color ONLY inside the Export Crop Rectangle
+        if (!isTransparent) {
+          ctx.fillStyle = inputBgColor.value;
+          ctx.fillRect(bgLeft, bgTop, bgWidth, bgHeight);
+        }
+
+        // 2. Render visual dashed boundary guide for workspace editor mode
+        if (!isExporting) {
+          ctx.strokeStyle = '#6366f1';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([5, 5]);
+          ctx.strokeRect(bgLeft, bgTop, bgWidth, bgHeight);
+
+          // Boundary Tag Badge
+          ctx.fillStyle = '#6366f1';
+          ctx.font = '10px sans-serif';
+          const label = '保存対象領域 (Export Area)';
+          const textWidth = ctx.measureText(label).width;
+          ctx.fillRect(bgLeft, Math.max(0, bgTop - 18), textWidth + 10, 18);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(label, bgLeft + 5, Math.max(12, bgTop - 5));
+        }
+
+        ctx.restore();
+      });
+
+      updateCanvasReadout();
+
+      // Canvas Event Hooks
+      canvas.on('object:modified', handleCanvasChange);
+      canvas.on('object:added', handleCanvasChange);
+      canvas.on('object:removed', handleCanvasChange);
+      canvas.on('selection:created', updateSelectionUI);
+      canvas.on('selection:updated', updateSelectionUI);
+      canvas.on('selection:cleared', updateSelectionUI);
+      
+      // Prevent interactions during cropping
+      canvas.on('mouse:down', function(options) {
+        if (isCropping && options.target !== cropRect) {
+          // Prevent selecting other things while cropping
+          canvas.discardActiveObject();
+          canvas.setActiveObject(cropRect);
+        }
+      });
+    }
+
+    function switchTab(tabKey) {
+      Object.keys(tabBtns).forEach(k => {
+        if (k === tabKey) {
+          tabBtns[k].classList.add('text-indigo-400', 'bg-slate-800', 'font-semibold');
+          tabBtns[k].classList.remove('hover:text-slate-200');
+          tabContents[k].classList.remove('hidden');
+        } else {
+          tabBtns[k].classList.remove('text-indigo-400', 'bg-slate-800', 'font-semibold');
+          tabBtns[k].classList.add('hover:text-slate-200');
+          tabContents[k].classList.add('hidden');
+        }
+      });
+    }
+
+    function handleCanvasChange() {
+      const objects = canvas.getObjects();
+      
+      if (objects.length === 0) {
+        emptyHint.classList.remove('hidden');
+      } else {
+        emptyHint.classList.add('hidden');
+      }
+
+      if (autoResizeEnabled && objects.length > 0) {
+        autoFitCanvasToBounds();
+      }
+
+      if (!isDraggingLayer) {
+        updateLayersList();
+      }
+      updateCanvasReadout();
+      canvas.renderAll();
+    }
+
+    function autoFitCanvasToBounds() {
+      const objects = canvas.getObjects();
+      if (objects.length === 0) return;
+
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+      objects.forEach(obj => {
+        const bound = obj.getBoundingRect(true);
+        if (bound.left < minX) minX = bound.left;
+        if (bound.top < minY) minY = bound.top;
+        if (bound.left + bound.width > maxX) maxX = bound.left + bound.width;
+        if (bound.top + bound.height > maxY) maxY = bound.top + bound.height;
+      });
+
+      if (minX === Infinity) return;
+
+      const offsetX = WORKING_MARGIN - minX;
+      const offsetY = WORKING_MARGIN - minY;
+
+      if (Math.abs(offsetX) > 0.5 || Math.abs(offsetY) > 0.5) {
+        objects.forEach(obj => {
+          obj.left += offsetX;
+          obj.top += offsetY;
+          obj.setCoords();
+        });
+      }
+
+      const contentWidth = Math.max(100, Math.ceil(maxX - minX));
+      const contentHeight = Math.max(100, Math.ceil(maxY - minY));
+
+      const workingWidth = contentWidth + WORKING_MARGIN * 2;
+      const workingHeight = contentHeight + WORKING_MARGIN * 2;
+
+      if (canvas.width !== workingWidth || canvas.height !== workingHeight) {
+        canvas.setWidth(workingWidth);
+        canvas.setHeight(workingHeight);
+      }
+    }
+
+    function setupDragAndDrop() {
+      dropZone.addEventListener('click', () => fileInput.click());
+
+      fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+          loadFiles(e.target.files);
+          fileInput.value = '';
+        }
+      });
+
+      let dragCounter = 0;
+
+      window.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragCounter++;
+        dragOverlay.classList.remove('opacity-0', 'pointer-events-none');
+      });
+
+      window.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter === 0) {
+          dragOverlay.classList.add('opacity-0', 'pointer-events-none');
+        }
+      });
+
+      window.addEventListener('dragover', (e) => e.preventDefault());
+
+      window.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        dragOverlay.classList.add('opacity-0', 'pointer-events-none');
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+          loadFiles(e.dataTransfer.files);
+        }
+      });
+    }
+
+    function loadFiles(files) {
+      const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+      if (imageFiles.length === 0) return;
+
+      let loadedCount = 0;
+
+      imageFiles.forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          fabric.Image.fromURL(e.target.result, (img) => {
+            const maxInitialDim = 400;
+            if (img.width > maxInitialDim || img.height > maxInitialDim) {
+              const scale = maxInitialDim / Math.max(img.width, img.height);
+              img.scale(scale);
+            }
+
+            const currentObjs = canvas.getObjects().length;
+            img.set({
+              left: WORKING_MARGIN + (currentObjs * 30) % 200,
+              top: WORKING_MARGIN + (currentObjs * 30) % 200
+            });
+
+            img.customName = file.name || `画像 ${currentObjs + 1}`;
+
+            canvas.add(img);
+            canvas.setActiveObject(img);
+
+            loadedCount++;
+            if (loadedCount === imageFiles.length) {
+              handleCanvasChange();
+              switchTab('layers');
+            }
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function updateSelectionUI() {
+      if (isCropping) return; // Don't update UI if currently in crop mode
+
+      const activeObj = canvas.getActiveObject();
+
+      if (!activeObj) {
+        selectedControls.classList.add('hidden');
+        noSelectionMsg.classList.remove('hidden');
+        if (!isDraggingLayer) updateLayersList();
+        return;
+      }
+
+      selectedControls.classList.remove('hidden');
+      noSelectionMsg.classList.add('hidden');
+
+      const scalePercent = Math.round((activeObj.scaleX || 1) * 100);
+      const angle = Math.round(activeObj.angle || 0);
+      const opacityPercent = Math.round((activeObj.opacity ?? 1) * 100);
+
+      inputScale.value = scalePercent;
+      scaleValTxt.textContent = `${scalePercent}%`;
+
+      inputRotate.value = angle;
+      rotateValTxt.textContent = `${angle}°`;
+
+      inputOpacity.value = opacityPercent;
+      opacityValTxt.textContent = `${opacityPercent}%`;
+
+      if (!isDraggingLayer) updateLayersList();
+    }
+
+    let draggedIndex = null;
+
+    function updateLayersList() {
+      if (isDraggingLayer) return;
+      layersListEl.innerHTML = '';
+      const objects = canvas.getObjects();
+
+      if (objects.length === 0) {
+        layersListEl.innerHTML = `<div class="text-xs text-slate-500 italic text-center py-3">画像が読み込まれていません</div>`;
+        return;
+      }
+
+      // Render layer list (top object in canvas stack is displayed first)
+      const reversedObjects = objects.slice().reverse();
+
+      reversedObjects.forEach((obj, displayIdx) => {
+        const actualIndex = objects.indexOf(obj);
+        const isSelected = canvas.getActiveObject() === obj;
+
+        const layerItem = document.createElement('div');
+        layerItem.setAttribute('draggable', 'true');
+        layerItem.dataset.index = actualIndex;
+        
+        layerItem.className = `layer-item flex items-center justify-between p-2 text-xs rounded-lg cursor-grab active:cursor-grabbing border transition ${
+          isSelected 
+            ? 'bg-indigo-900/60 border-indigo-500 text-white shadow-sm' 
+            : 'bg-slate-900/60 border-slate-700/60 text-slate-300 hover:bg-slate-800'
+        }`;
+
+        layerItem.innerHTML = `
+          <div class="flex items-center space-x-2 truncate flex-1 min-w-0 pointer-events-none">
+            <i class="fa-solid fa-grip-vertical text-slate-500"></i>
+            <i class="fa-regular fa-image text-indigo-400"></i>
+            <span class="truncate font-medium">${obj.customName || `レイヤー ${actualIndex + 1}`}</span>
+          </div>
+          <div class="flex items-center space-x-1 shrink-0">
+            <button class="btn-move-up p-1 hover:text-indigo-300 text-slate-400 transition" title="1つ上へ">
+              <i class="fa-solid fa-chevron-up text-[10px]"></i>
+            </button>
+            <button class="btn-move-down p-1 hover:text-indigo-300 text-slate-400 transition" title="1つ下へ">
+              <i class="fa-solid fa-chevron-down text-[10px]"></i>
+            </button>
+            <button class="btn-del-layer p-1 hover:text-rose-400 text-slate-400 transition ml-1" title="削除">
+              <i class="fa-solid fa-xmark text-xs"></i>
+            </button>
+          </div>
+        `;
+
+        // Selection click
+        layerItem.addEventListener('click', (e) => {
+          if (e.target.closest('.btn-move-up') || e.target.closest('.btn-move-down') || e.target.closest('.btn-del-layer')) return;
+          if (isCropping) cancelCropMode(); // Cancel crop if switching layers
+          canvas.setActiveObject(obj);
+          canvas.renderAll();
+          updateSelectionUI();
+        });
+
+        // Layer Quick Buttons
+        layerItem.querySelector('.btn-move-up').addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (actualIndex < objects.length - 1) {
+            canvas.moveTo(obj, actualIndex + 1);
+            handleCanvasChange();
+          }
+        });
+
+        layerItem.querySelector('.btn-move-down').addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (actualIndex > 0) {
+            canvas.moveTo(obj, actualIndex - 1);
+            handleCanvasChange();
+          }
+        });
+
+        layerItem.querySelector('.btn-del-layer').addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (isCropping && cropTargetImage === obj) cancelCropMode();
+          canvas.remove(obj);
+          canvas.discardActiveObject();
+          handleCanvasChange();
+        });
+
+        // HTML5 Drag and Drop Handlers
+        layerItem.addEventListener('dragstart', (e) => {
+          isDraggingLayer = true;
+          draggedIndex = actualIndex;
+          e.dataTransfer.setData('text/plain', String(actualIndex));
+          e.dataTransfer.effectAllowed = 'move';
+          setTimeout(() => layerItem.classList.add('opacity-40'), 0);
+        });
+
+        layerItem.addEventListener('dragend', () => {
+          isDraggingLayer = false;
+          draggedIndex = null;
+          document.querySelectorAll('.layer-item').forEach(el => {
+            el.classList.remove('opacity-40', 'border-indigo-400', 'bg-indigo-950/80');
+          });
+        });
+
+        layerItem.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          layerItem.classList.add('border-indigo-400', 'bg-indigo-950/80');
+        });
+
+        layerItem.addEventListener('dragleave', () => {
+          layerItem.classList.remove('border-indigo-400', 'bg-indigo-950/80');
+        });
+
+        layerItem.addEventListener('drop', (e) => {
+          e.preventDefault();
+          layerItem.classList.remove('border-indigo-400', 'bg-indigo-950/80');
+
+          const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+          const targetIdx = actualIndex;
+
+          if (isNaN(fromIdx) || fromIdx === targetIdx) return;
+
+          const currentObjects = canvas.getObjects();
+          const movingObj = currentObjects[fromIdx];
+          if (movingObj) {
+            canvas.moveTo(movingObj, targetIdx);
+            isDraggingLayer = false;
+            handleCanvasChange();
+          }
+        });
+
+        layersListEl.appendChild(layerItem);
+      });
+    }
+
+    function setupEventListeners() {
+      // Scale Slider
+      inputScale.addEventListener('input', (e) => {
+        const activeObj = canvas.getActiveObject();
+        if (!activeObj) return;
+        const val = parseInt(e.target.value) / 100;
+        activeObj.scale(val);
+        scaleValTxt.textContent = `${e.target.value}%`;
+        handleCanvasChange();
+      });
+
+      // Rotation Slider
+      inputRotate.addEventListener('input', (e) => {
+        const activeObj = canvas.getActiveObject();
+        if (!activeObj) return;
+        const val = parseInt(e.target.value);
+        activeObj.set('angle', val);
+        rotateValTxt.textContent = `${val}°`;
+        handleCanvasChange();
+      });
+
+      // Opacity Slider
+      inputOpacity.addEventListener('input', (e) => {
+        const activeObj = canvas.getActiveObject();
+        if (!activeObj) return;
+        const val = parseInt(e.target.value) / 100;
+        activeObj.set('opacity', val);
+        opacityValTxt.textContent = `${e.target.value}%`;
+        canvas.renderAll();
+      });
+
+      // Flips
+      document.getElementById('btn-flip-x').addEventListener('click', () => {
+        if (isCropping) return;
+        const activeObj = canvas.getActiveObject();
+        if (!activeObj) return;
+        activeObj.set('flipX', !activeObj.flipX);
+        canvas.renderAll();
+      });
+
+      document.getElementById('btn-flip-y').addEventListener('click', () => {
+        const activeObj = canvas.getActiveObject();
+        if (!activeObj) return;
+        activeObj.set('flipY', !activeObj.flipY);
+        canvas.renderAll();
+      });
+
+      // Transform Reset Button
+      document.getElementById('btn-reset-selected').addEventListener('click', () => {
+        const activeObj = canvas.getActiveObject();
+        if (!activeObj) return;
+
+        activeObj.set({
+          scaleX: 1,
+          scaleY: 1,
+          angle: 0,
+          opacity: 1,
+          flipX: false,
+          flipY: false
+        });
+
+        activeObj.setCoords();
+        updateSelectionUI();
+        handleCanvasChange();
+      });
+
+      // Layer Z-Index Move Buttons
+      document.getElementById('btn-z-top').addEventListener('click', () => {
+        const activeObj = canvas.getActiveObject();
+        if (activeObj) { canvas.bringToFront(activeObj); handleCanvasChange(); }
+      });
+      document.getElementById('btn-z-up').addEventListener('click', () => {
+        const activeObj = canvas.getActiveObject();
+        if (activeObj) { canvas.bringForward(activeObj); handleCanvasChange(); }
+      });
+      document.getElementById('btn-z-down').addEventListener('click', () => {
+        const activeObj = canvas.getActiveObject();
+        if (activeObj) { canvas.sendBackwards(activeObj); handleCanvasChange(); }
+      });
+      document.getElementById('btn-z-bottom').addEventListener('click', () => {
+        const activeObj = canvas.getActiveObject();
+        if (activeObj) { canvas.sendToBack(activeObj); handleCanvasChange(); }
+      });
+
+      // Delete active object
+      document.getElementById('btn-delete-selected').addEventListener('click', () => {
+        const activeObj = canvas.getActiveObject();
+        if (activeObj) {
+          canvas.remove(activeObj);
+          canvas.discardActiveObject();
+          handleCanvasChange();
+        }
+      });
+
+      // Clear All
+      document.getElementById('btn-clear-all').addEventListener('click', () => {
+        if (canvas.getObjects().length === 0) return;
+        if (isCropping) cancelCropMode();
+        canvas.clear();
+        handleCanvasChange();
+      });
+
+      // Auto Resize Checkbox
+      toggleAutoResize.addEventListener('change', (e) => {
+        autoResizeEnabled = e.target.checked;
+        if (autoResizeEnabled) handleCanvasChange();
+      });
+
+      // Export Padding Slider
+      inputCanvasPadding.addEventListener('input', (e) => {
+        exportPadding = parseInt(e.target.value);
+        paddingValTxt.textContent = `${exportPadding}px`;
+        updateCanvasReadout();
+        canvas.renderAll();
+      });
+
+      // Background Transparency Toggle & Color Picker
+      toggleBgTransparent.addEventListener('change', (e) => {
+        isTransparent = e.target.checked;
+        if (isTransparent) {
+          bgColorGroup.classList.add('opacity-50', 'pointer-events-none');
+        } else {
+          bgColorGroup.classList.remove('opacity-50', 'pointer-events-none');
+        }
+        canvas.renderAll();
+      });
+
+      inputBgColor.addEventListener('input', (e) => {
+        const color = e.target.value;
+        bgColorCode.textContent = color.toUpperCase();
+        if (!isTransparent) {
+          canvas.renderAll();
+        }
+      });
+
+      document.getElementById('btn-manual-fit').addEventListener('click', () => {
+        autoFitCanvasToBounds();
+        canvas.renderAll();
+      });
+
+      // Export Format Radio listeners
+      document.querySelectorAll('input[name="export-format"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+          const val = e.target.value;
+          const qualityGroup = document.getElementById('quality-slider-container');
+          if (val === 'jpeg' || val === 'webp') {
+            qualityGroup.classList.remove('hidden');
+          } else {
+            qualityGroup.classList.add('hidden');
+          }
+        });
+      });
+
+      document.getElementById('input-export-quality').addEventListener('input', (e) => {
+        document.getElementById('quality-val-txt').textContent = `${e.target.value}%`;
+      });
+
+      // Quick Export & Tab Download
+      document.getElementById('btn-quick-export').addEventListener('click', () => switchTab('export'));
+      document.getElementById('btn-export-download').addEventListener('click', exportCanvasImage);
+
+      // Crop Event Listeners
+      btnStartCrop.addEventListener('click', startCropMode);
+      btnApplyCrop.addEventListener('click', applyCrop);
+      btnCancelCrop.addEventListener('click', cancelCropMode);
+
+      // Keyboard Shortcuts
+      window.addEventListener('keydown', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+
+        if (e.key === 'Escape' && isCropping) {
+          cancelCropMode();
+          return;
+        }
+        
+        if ((e.key === 'Enter') && isCropping) {
+           applyCrop();
+           return;
+        }
+
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          if (isCropping) return; // Disable delete while cropping
+          const activeObj = canvas.getActiveObject();
+          if (activeObj) {
+            canvas.remove(activeObj);
+            canvas.discardActiveObject();
+            handleCanvasChange();
+          }
+        }
+      });
+
+      // Zoom Controls
+      document.getElementById('btn-zoom-in').addEventListener('click', () => adjustZoom(1.15));
+      document.getElementById('btn-zoom-out').addEventListener('click', () => adjustZoom(0.85));
+      document.getElementById('btn-zoom-reset').addEventListener('click', () => {
+        currentZoom = 1;
+        canvas.setZoom(1);
+        document.getElementById('zoom-level-txt').textContent = '100%';
+      });
+    }
+
+    function adjustZoom(factor) {
+      currentZoom *= factor;
+      currentZoom = Math.min(Math.max(0.2, currentZoom), 3);
+      canvas.setZoom(currentZoom);
+      document.getElementById('zoom-level-txt').textContent = `${Math.round(currentZoom * 100)}%`;
+    }
+    
+    // --- Cropping Functionality ---
+
+    function startCropMode() {
+      const activeObj = canvas.getActiveObject();
+      if (!activeObj || activeObj.type !== 'image') {
+        alert('クロップするには画像を選択してください。');
+        return;
+      }
+
+      isCropping = true;
+      cropTargetImage = activeObj;
+
+      // Update UI
+      btnStartCrop.classList.add('hidden');
+      cropActionsGroup.classList.remove('hidden');
+      
+      // Disable object controls to prevent transform during crop setup
+      cropTargetImage.set({
+        selectable: false,
+        evented: false,
+        hasControls: false,
+        hasBorders: false
+      });
+
+      // Create a semi-transparent dark overlay to dim the rest of the canvas
+      cropOverlay = new fabric.Rect({
+        left: 0,
+        top: 0,
+        width: 10000, // Make it arbitrarily large to cover everything
+        height: 10000,
+        fill: 'rgba(0, 0, 0, 0.5)',
+        selectable: false,
+        evented: false,
+        originX: 'center',
+        originY: 'center',
+        left: canvas.width / 2,
+        top: canvas.height / 2
+      });
+      canvas.add(cropOverlay);
+
+      // Calculate initial crop rectangle bounds based on current image state
+      const bound = cropTargetImage.getBoundingRect(true);
+      
+      // Create the cropping rectangle
+      cropRect = new fabric.Rect({
+        left: bound.left,
+        top: bound.top,
+        width: bound.width,
+        height: bound.height,
+        fill: 'rgba(0, 0, 0, 0)', // Transparent inside
+        stroke: '#10b981', // Emerald color to indicate crop mode
+        strokeWidth: 2,
+        strokeDashArray: [5, 5],
+        cornerColor: '#10b981',
+        cornerStrokeColor: '#ffffff',
+        cornerSize: 12,
+        transparentCorners: false,
+        hasRotatingPoint: false, // Don't allow rotating the crop box
+        lockRotation: true,
+        borderColor: '#10b981'
+      });
+
+      // Ensure the crop rect stays within the bounds of the original image
+      // (This is a simplified constraint, true bounding within a rotated image is complex,
+      // so we allow arbitrary cropping visually, then apply it)
+      
+      canvas.add(cropRect);
+      canvas.setActiveObject(cropRect);
+      
+      // Bring overlay and rect to front, but ensure rect is above overlay
+      cropOverlay.bringToFront();
+      cropTargetImage.bringToFront(); // Bring target image above overlay so it's visible clearly
+      cropRect.bringToFront();
+
+      // Temporarily change global compositing so the target image punches a hole through the overlay? 
+      // Simpler approach: Just put the crop rect on top. 
+      // To make the area *outside* the crop rect dark, but *inside* clear, we can use a clipPath trick or just 
+      // let the transparent rect show the image below. The overlay approach above dims everything.
+      // Let's refine the visual: Remove overlay, just use a bright dashed box.
+      
+      // refined visual:
+      canvas.remove(cropOverlay); // Remove simple overlay
+
+      canvas.renderAll();
+    }
+
+    function cancelCropMode() {
+      if (!isCropping) return;
+      isCropping = false;
+      
+      // Restore UI
+      btnStartCrop.classList.remove('hidden');
+      cropActionsGroup.classList.add('hidden');
+
+      if (cropRect) {
+        canvas.remove(cropRect);
+      }
+      
+      if (cropTargetImage) {
+        cropTargetImage.set({
+          selectable: true,
+          evented: true,
+          hasControls: true,
+          hasBorders: true
+        });
+        canvas.setActiveObject(cropTargetImage);
+      }
+
+      cropRect = null;
+      cropTargetImage = null;
+      
+      canvas.renderAll();
+      updateSelectionUI();
+    }
+
+    function applyCrop() {
+      if (!isCropping || !cropRect || !cropTargetImage) return;
+
+      // 1. Get the bounding box of the crop rectangle relative to the canvas
+      const cropBound = cropRect.getBoundingRect(true);
+      
+      // 2. We need to create a temporary canvas to draw the cropped area
+      // Because the image might be scaled or rotated, we render the portion of the fabric canvas
+      // that falls within the crop rectangle. 
+      // An alternative and cleaner approach is to use the original image and HTML canvas cropping.
+      
+      // Approach: Render the specific area of the target image onto an offscreen canvas
+      
+      const multiplier = 1 / canvas.getZoom();
+      
+      // Create a temporary standard canvas
+      const tempCanvas = document.createElement('canvas');
+      // Set temp canvas size to the crop box size
+      tempCanvas.width = cropBound.width;
+      tempCanvas.height = cropBound.height;
+      const ctx = tempCanvas.getContext('2d');
+
+      // Hide the crop rect and selection so it doesn't get drawn
+      cropRect.visible = false;
+      canvas.discardActiveObject();
+      
+      // Temporarily hide other objects to only capture the target image
+      const otherObjects = canvas.getObjects().filter(obj => obj !== cropTargetImage);
+      const originalVisibility = otherObjects.map(obj => obj.visible);
+      otherObjects.forEach(obj => obj.visible = false);
+      
+      canvas.renderAll();
+
+      // Draw from the fabric canvas context to our temp canvas
+      // Note: This relies on the fabric canvas current state.
+      // We need to account for retina displays (devicePixelRatio)
+      const retinaScaling = canvas.getRetinaScaling();
+      
+      ctx.drawImage(
+        canvas.getElement(),
+        cropBound.left * retinaScaling,
+        cropBound.top * retinaScaling,
+        cropBound.width * retinaScaling,
+        cropBound.height * retinaScaling,
+        0, 0,
+        cropBound.width, cropBound.height
+      );
+
+      // Restore visibility
+      otherObjects.forEach((obj, idx) => obj.visible = originalVisibility[idx]);
+      cropRect.visible = true;
+
+      // Get the cropped image data URL
+      const croppedDataUrl = tempCanvas.toDataURL('image/png');
+
+      // Update the original fabric image object with new source
+      const originalName = cropTargetImage.customName;
+      const originalZIndex = canvas.getObjects().indexOf(cropTargetImage);
+
+      fabric.Image.fromURL(croppedDataUrl, function(newImg) {
+        // Set properties of new image to match crop location
+        newImg.set({
+          left: cropBound.left,
+          top: cropBound.top,
+          customName: originalName,
+          scaleX: 1, // Scale is 1 because we baked the current scale/rotation into the new image
+          scaleY: 1,
+          angle: 0
+        });
+
+        // Add new image, remove old
+        canvas.add(newImg);
+        canvas.moveTo(newImg, originalZIndex);
+        
+        // Remove old image and crop UI
+        canvas.remove(cropTargetImage);
+        isCropping = false;
+        
+        if (cropRect) canvas.remove(cropRect);
+        
+        // Cleanup state
+        cropRect = null;
+        cropTargetImage = null;
+        
+        // Restore UI
+        btnStartCrop.classList.remove('hidden');
+        cropActionsGroup.classList.add('hidden');
+
+        canvas.setActiveObject(newImg);
+        handleCanvasChange();
+        updateSelectionUI();
+      });
+    }
+
+    // --- End Cropping Functionality ---
+
+    function updateCanvasReadout() {
+      const objects = canvas.getObjects();
+      if (objects.length === 0) {
+        canvasSizeReadout.textContent = `0 x 0 px`;
+        return;
+      }
+      
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      objects.forEach(obj => {
+        const bound = obj.getBoundingRect(true);
+        if (bound.left < minX) minX = bound.left;
+        if (bound.top < minY) minY = bound.top;
+        if (bound.left + bound.width > maxX) maxX = bound.left + bound.width;
+        if (bound.top + bound.height > maxY) maxY = bound.top + bound.height;
+      });
+
+      const exportW = Math.ceil(maxX - minX + exportPadding * 2);
+      const exportH = Math.ceil(maxY - minY + exportPadding * 2);
+      canvasSizeReadout.textContent = `${exportW} x ${exportH} px`;
+    }
+
+    function exportCanvasImage() {
+      const objects = canvas.getObjects();
+      if (objects.length === 0) {
+        alert('キャンバスに画像がありません。画像を配置してから保存してください。');
+        return;
+      }
+
+      const format = document.querySelector('input[name="export-format"]:checked').value;
+      const multiplier = parseFloat(document.getElementById('select-export-scale').value);
+      const quality = parseInt(document.getElementById('input-export-quality').value) / 100;
+      let filename = document.getElementById('input-filename').value.trim() || 'merged-image';
+
+      // Discard selection box
+      canvas.discardActiveObject();
+      
+      // Enable export rendering mode (hides boundary dashed line guide)
+      isExporting = true;
+
+      // Ensure JPEG format fills white if transparency was enabled
+      const tempTransparentState = isTransparent;
+      if (format === 'jpeg' && isTransparent) {
+        isTransparent = false;
+      }
+
+      canvas.renderAll();
+
+      // Calculate pure image content bounding box
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      objects.forEach(obj => {
+        const bound = obj.getBoundingRect(true);
+        if (bound.left < minX) minX = bound.left;
+        if (bound.top < minY) minY = bound.top;
+        if (bound.left + bound.width > maxX) maxX = bound.left + bound.width;
+        if (bound.top + bound.height > maxY) maxY = bound.top + bound.height;
+      });
+
+      const cropLeft = minX - exportPadding;
+      const cropTop = minY - exportPadding;
+      const cropWidth = Math.ceil(maxX - minX + exportPadding * 2);
+      const cropHeight = Math.ceil(maxY - minY + exportPadding * 2);
+
+      // Generate cropped image data URL
+      try {
+        const dataURL = canvas.toDataURL({
+          format: format === 'jpeg' ? 'jpeg' : format,
+          quality: quality,
+          multiplier: multiplier,
+          left: cropLeft,
+          top: cropTop,
+          width: cropWidth,
+          height: cropHeight
+        });
+
+        // Convert data URL to Blob to avoid CSP issues with large data URIs in anchors
+        const arr = dataURL.split(',');
+        const mime = arr[0].match(/:(.*?);/)[1];
+        const bstr = atob(arr[1]);
+        let n = bstr.length;
+        const u8arr = new Uint8Array(n);
+        while(n--){
+            u8arr[n] = bstr.charCodeAt(n);
+        }
+        const blob = new Blob([u8arr], {type:mime});
+        
+        // Create Object URL from Blob
+        const blobUrl = URL.createObjectURL(blob);
+
+        // Restore states
+        isTransparent = tempTransparentState;
+        isExporting = false;
+        canvas.renderAll();
+
+        // Download trigger using Blob URL
+        const link = document.createElement('a');
+        link.download = `${filename}.${format}`;
+        link.href = blobUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Cleanup the object URL
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+
+      } catch (error) {
+        console.error("画像のエクスポート中にエラーが発生しました:", error);
+        // Restore states even if error occurs
+        isTransparent = tempTransparentState;
+        isExporting = false;
+        canvas.renderAll();
+        // custom alert box substitution can be done here if needed, 
+        // falling back to a safer UI message instead of blocking alert
+        const errorMsg = document.createElement('div');
+        errorMsg.className = 'fixed top-4 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-4 py-2 rounded shadow-lg z-50 text-sm';
+        errorMsg.textContent = '画像の保存に失敗しました。ブラウザのセキュリティ設定（CORS等）をご確認ください。';
+        document.body.appendChild(errorMsg);
+        setTimeout(() => document.body.removeChild(errorMsg), 5000);
+      }
+    }
+  </script>
+</body>
+</html>

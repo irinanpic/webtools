@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ja" class="h-full bg-slate-950 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>画像処理ツール 統合ダッシュボード</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    /* カスタムスクロールバー */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased selection:bg-indigo-500 selection:text-white">
+
+  <!-- ヘッダー -->
+  <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between shrink-0 z-20 shadow-md">
+    <div class="flex items-center space-x-3">
+      <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+        <i class="fa-solid fa-shapes text-sm"></i>
+      </div>
+      <div>
+        <h1 class="text-base font-bold text-white leading-none">画像処理ツール ダッシュボード</h1>
+        <p class="text-[11px] text-slate-400 mt-1">Web Image Processing Tool Suite</p>
+      </div>
+    </div>
+    <div id="currentToolTitle" class="text-xs text-slate-400 font-medium bg-slate-950/60 px-3 py-1.5 rounded-lg border border-slate-800 flex items-center gap-2">
+      <i class="fa-solid fa-circle-info text-indigo-400"></i>
+      <span id="activeToolName">ツールを選択してください</span>
+    </div>
+  </header>
+
+  <!-- メインコンテンツ領域（左右2列構成） -->
+  <div class="flex-1 flex overflow-hidden">
+
+    <!-- 左側：ツール選択サイドバー -->
+    <aside class="w-80 bg-slate-900/90 border-r border-slate-800 flex flex-col shrink-0 z-10">
+      <div class="p-3 border-b border-slate-800">
+        <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">利用可能なツール一覧</span>
+      </div>
+
+      <!-- メニューリスト表示エリア -->
+      <nav id="toolList" class="flex-1 p-2 space-y-1 overflow-y-auto">
+        <!-- JavaScriptで動的に描画されます -->
+      </nav>
+
+      <!-- フッター情報 -->
+      <div class="p-3 border-t border-slate-800 text-[10px] text-slate-500 text-center">
+        &copy; Image Tools Dashboard
+      </div>
+    </aside>
+
+    <!-- 右側：内部ロード用コンテンツ表示エリア (iframe) -->
+    <main class="flex-1 bg-slate-950 relative overflow-hidden flex flex-col">
+      <!-- ページロード用 iframe -->
+      <iframe id="contentFrame" class="w-full h-full border-0 hidden" title="ツールコンテンツ"></iframe>
+
+      <!-- 初期状態・ロード中プレースホルダー -->
+      <div id="placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 p-6 text-center">
+        <div class="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600 mb-4 shadow-inner">
+          <i class="fa-solid fa-arrow-left text-2xl animate-pulse"></i>
+        </div>
+        <p class="text-sm font-medium text-slate-400 mb-1">左側のリストから使用したいツールを選択してください</p>
+        <p class="text-xs text-slate-600">選択したツールがこのエリアに内部読み込みされます</p>
+      </div>
+    </main>
+
+  </div>
+
+  <script>
+    /**
+     * ページ（ツール）定義設定
+     * 今後ツールを追加・編集する場合は、この配列をメンテするだけで簡単に拡張できます。
+     */
+    const PAGES = [
+      {
+        id: 'cropper',
+        title: '画像クロッパー & リサイザー',
+        icon: 'fa-crop-simple',
+        path: 'image_cropper_resizer.html', // 実際のファイルパスに合わせて変更してください
+        desc: 'ドラッグ＆ドロップで高精度クロップ・サイズ変換'
+      },
+      {
+        id: 'pack-fusion',
+        title: 'タイル合成',
+        icon: 'fa-table-cells',
+        path: 'tilesheet_pack_fusion.html', // 実際のファイルパスに合わせて変更してください
+        desc: '画像タイルの再統合・グリッドレイアウト・JSON出力'
+      },
+      {
+        id: 'tile-splitter',
+        title: 'タイル分割',
+        icon: 'fa-border-all',
+        path: 'code_artifact.html', // 実際のファイルパスに合わせて変更してください
+        desc: '画像タイル・スプライトシート分割ツール'
+      },
+      {
+        id: 'image-canvas',
+        title: 'マルチ画像結合・レイアウトエディタ',
+        icon: 'fa-layer-group',
+        path: 'image_merger.html', // 実際のファイルパスに合わせて変更してください
+        desc: '画像貼り付け・レイアウトツール'
+      }
+    ];
+
+    // DOM要素の取得
+    const toolList = document.getElementById('toolList');
+    const contentFrame = document.getElementById('contentFrame');
+    const placeholder = document.getElementById('placeholder');
+    const activeToolName = document.getElementById('activeToolName');
+
+    let activePageId = null;
+
+    /**
+     * サイドバーメニューの動的レンダリング
+     */
+    function renderSidebar() {
+      toolList.innerHTML = '';
+
+      PAGES.forEach(page => {
+        const isActive = page.id === activePageId;
+        const btn = document.createElement('button');
+        
+        btn.className = `w-full text-left p-3 rounded-xl border transition-all flex items-start space-x-3 group ${
+          isActive 
+            ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-200 shadow-md' 
+            : 'bg-slate-950/40 border-slate-800/80 hover:bg-slate-800/60 hover:border-slate-700 text-slate-300'
+        }`;
+
+        btn.innerHTML = `
+          <div class="w-8 h-8 rounded-lg ${isActive ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 group-hover:text-indigo-400'} flex items-center justify-center shrink-0 transition-colors mt-0.5">
+            <i class="fa-solid ${page.icon} text-sm"></i>
+          </div>
+          <div class="min-w-0 flex-1">
+            <div class="text-xs font-bold leading-snug truncate ${isActive ? 'text-white' : 'text-slate-200'}">${escapeHtml(page.title)}</div>
+            <div class="text-[10px] text-slate-400 truncate mt-1 leading-tight">${escapeHtml(page.desc)}</div>
+          </div>
+        `;
+
+        btn.addEventListener('click', () => loadPage(page.id));
+        toolList.appendChild(btn);
+      });
+    }
+
+    /**
+     * 右側 iframe へのページ内部ロード処理
+     */
+    function loadPage(pageId) {
+      const page = PAGES.find(p => p.id === pageId);
+      if (!page) return;
+
+      activePageId = page.id;
+      renderSidebar();
+
+      // ヘッダータイトルの更新
+      activeToolName.textContent = page.title;
+
+      // iframe への表示切替
+      placeholder.classList.add('hidden');
+      contentFrame.classList.remove('hidden');
+      
+      // iframe にソースを設定
+      contentFrame.src = page.path;
+    }
+
+    /**
+     * エスケープ処理
+     */
+    function escapeHtml(str) {
+      return str.replace(/[&<>"']/g, match => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      }[match]));
+    }
+
+    // 初期化（自動で先頭のツールを読み込む場合）
+    window.addEventListener('DOMContentLoaded', () => {
+      renderSidebar();
+      if (PAGES.length > 0) {
+        loadPage(PAGES[0].id); // 最初のページを自動選択
+      }
+    });
+  </script>
+</body>
+</html>
