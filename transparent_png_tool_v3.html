@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>透過画像ジェネレーター (PNG / WebP)</title>
+
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+  :root {
+    --bg-color: #1e1e24;
+    --panel-bg: #2b2b36;
+    --panel-border: #3d3d4d;
+    --accent: #4f80ff;
+    --accent-hover: #3b6ae0;
+    --text: #f0f0f5;
+    --text-muted: #a0a0b0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
+  }
+  header {
+    background: #18181c;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--panel-border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .main-layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+  /* サイドバー */
+  .sidebar {
+    width: 340px;
+    background: var(--panel-bg);
+    border-right: 1px solid var(--panel-border);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+  }
+  .section {
+    background: #23232c;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: bold;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .control-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s;
+    text-align: center;
+  }
+  .btn:hover { background: var(--accent-hover); }
+  .btn-outline {
+    background: transparent;
+    border: 1px solid var(--panel-border);
+    color: var(--text);
+  }
+  .btn-outline:hover { background: #32323f; }
+  .btn-outline.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn-outline.active-erase {
+    background: #e65100;
+    border-color: #e65100;
+    color: #fff;
+  }
+  .btn-danger {
+    background: #d94545;
+  }
+  .btn-danger:hover { background: #b83232; }
+
+  .color-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  input[type="color"] {
+    -webkit-appearance: none;
+    border: 1px solid var(--panel-border);
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    cursor: pointer;
+    background: transparent;
+  }
+  input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+  input[type="color"]::-webkit-color-swatch { border: none; border-radius: 5px; }
+
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+  }
+
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+    user-select: none;
+  }
+  .checkbox-label input[type="checkbox"] {
+    accent-color: var(--accent);
+    width: 16px;
+    height: 16px;
+  }
+
+  .btn-group {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 6px;
+  }
+  .btn-group-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  /* ワークスペース */
+  .workspace {
+    flex: 1;
+    background: #141417;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: auto;
+    padding: 20px;
+  }
+
+  .canvas-wrapper {
+    position: relative;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    border-radius: 4px;
+    background-repeat: repeat;
+  }
+  canvas {
+    display: block;
+    cursor: crosshair;
+  }
+
+  /* プレビュー用背景バリエーション */
+  .bg-checker {
+    background-image: 
+      linear-gradient(45deg, #2a2a35 25%, transparent 25%), 
+      linear-gradient(-45deg, #2a2a35 25%, transparent 25%), 
+      linear-gradient(45deg, transparent 75%, #2a2a35 75%), 
+      linear-gradient(-45deg, transparent 75%, #2a2a35 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+    background-color: #1c1c24;
+  }
+  .bg-red { background-color: #ff1e56 !important; background-image: none !important; }
+  .bg-green { background-color: #00e676 !important; background-image: none !important; }
+  .bg-blue { background-color: #0066ff !important; background-image: none !important; }
+  .bg-black { background-color: #000000 !important; background-image: none !important; }
+  .bg-white { background-color: #ffffff !important; background-image: none !important; }
+
+  .dropzone {
+    border: 2px dashed #4f80ff;
+    border-radius: 12px;
+    padding: 40px;
+    text-align: center;
+    color: var(--text-muted);
+    cursor: pointer;
+    background: rgba(79, 128, 255, 0.05);
+    transition: background 0.2s;
+  }
+  .dropzone:hover {
+    background: rgba(79, 128, 255, 0.1);
+  }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><i class="fa-solid font-bold fa-eraser text-lg"></i> 透過画像ジェネレーター</h1>
+  <div style="display: flex; gap: 8px;">
+    <button class="btn btn-outline" id="resetBtn">リセット</button>
+    <button class="btn" id="downloadPngBtn">PNG保存</button>
+    <button class="btn" id="downloadWebpBtn" style="background: #20a080;">WebP保存</button>
+  </div>
+</header>
+
+<div class="main-layout">
+  <div class="sidebar">
+    
+    <!-- 1. 画像選択 -->
+    <div class="section">
+      <div class="section-title">1. 画像選択</div>
+      <input type="file" id="fileInput" accept="image/*" style="display: none;">
+      <button class="btn btn-outline" onclick="document.getElementById('fileInput').click()">別の画像を開く</button>
+    </div>
+
+    <!-- 2. 透過色の指定 -->
+    <div class="section">
+      <div class="section-title">2. 透過色の指定</div>
+      <div class="color-picker-row">
+        <input type="color" id="targetColor" value="#ffffff">
+        <span id="colorHexText" style="font-size: 13px; font-family: monospace;">#ffffff</span>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-outline" id="autoDetectCornersBtn">四隅から自動判定</button>
+        <button class="btn btn-outline" id="toolPipette">💧 スポイト</button>
+      </div>
+    </div>
+
+    <!-- 3. 透過範囲 & 境界アンチエイリアス -->
+    <div class="section">
+      <div class="section-title">3. 透過範囲・エッジ処理</div>
+      
+      <div class="control-group">
+        <div class="control-label">
+          <span>透過モード</span>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-outline active" id="modeFlood">外側のみ連結 (推奨)</button>
+          <button class="btn btn-outline" id="modeAll">全体同色一括</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <div class="control-label">
+          <span>許容誤差 (Tolerance)</span>
+          <span id="tolVal">30</span>
+        </div>
+        <input type="range" id="toleranceSlider" min="0" max="150" value="30">
+      </div>
+
+      <div class="control-group">
+        <div class="control-label">
+          <span>色差フェザー (ノイズ吸収)</span>
+          <span id="featherVal">10</span>
+        </div>
+        <input type="range" id="featherSlider" min="0" max="40" value="10">
+      </div>
+
+      <div class="control-group">
+        <div class="control-label">
+          <span>境界アルファブレンド (ジャギー緩和)</span>
+          <span id="smoothVal">1.5px</span>
+        </div>
+        <input type="range" id="smoothSlider" min="0" max="5" step="0.5" value="1.5">
+      </div>
+    </div>
+
+    <!-- 4. 手動ブラシマスク (保護・透過相反) -->
+    <div class="section">
+      <div class="section-title">4. 手動ブラシマスク</div>
+      
+      <div class="control-group">
+        <div class="control-label">
+          <span>ブラシツール</span>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-outline" id="toolProtect">🛡️ 保護ブラシ</button>
+          <button class="btn btn-outline" id="toolErase">✂️ 透過ブラシ</button>
+        </div>
+      </div>
+
+      <!-- ブラシ色設定 -->
+      <div class="control-group" style="background: rgba(0,0,0,0.15); padding: 8px; border-radius: 6px;">
+        <div class="control-label" style="margin-bottom: 4px;">
+          <span>マスク表示色設定</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="font-size: 11px; color: var(--text-muted);">保護マスク色:</span>
+          <input type="color" id="protectColorInput" value="#00ffcc">
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 11px; color: var(--text-muted);">透過マスク色:</span>
+          <input type="color" id="eraseColorInput" value="#ff9900">
+        </div>
+      </div>
+
+      <div class="control-group" id="brushSizeGroup">
+        <div class="control-label">
+          <span>ブラシサイズ</span>
+          <span id="brushSizeVal">20px</span>
+        </div>
+        <input type="range" id="brushSizeSlider" min="5" max="100" value="20">
+      </div>
+
+      <label class="checkbox-label">
+        <input type="checkbox" id="showMaskCheckbox" checked>
+        <span>マスクの色を表示する</span>
+      </label>
+
+      <button class="btn btn-outline btn-danger" id="clearMaskBtn">全マスクをクリア</button>
+    </div>
+
+    <!-- 5. 抜け漏れチェック用背景 -->
+    <div class="section">
+      <div class="section-title">5. 抜け漏れチェック用背景</div>
+      <div class="btn-group-3">
+        <button class="btn btn-outline active" data-bg="bg-checker">市松</button>
+        <button class="btn btn-outline" data-bg="bg-red" style="color: #ff5577;">赤</button>
+        <button class="btn btn-outline" data-bg="bg-green" style="color: #00e676;">緑</button>
+        <button class="btn btn-outline" data-bg="bg-blue" style="color: #5599ff;">青</button>
+        <button class="btn btn-outline" data-bg="bg-black">黒</button>
+        <button class="btn btn-outline" data-bg="bg-white">白</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="workspace" id="workspace">
+    <div class="dropzone" id="dropzone">
+      <p style="font-size: 16px; font-weight: bold; margin-bottom: 8px; color: var(--text);">画像をドラッグ＆ドロップ</p>
+      <p style="font-size: 13px;">またはクリックしてファイルを選択</p>
+    </div>
+
+    <div class="canvas-wrapper bg-checker hidden" id="canvasWrapper">
+      <canvas id="mainCanvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+  // DOM
+  const fileInput = document.getElementById('fileInput');
+  const dropzone = document.getElementById('dropzone');
+  const workspace = document.getElementById('workspace');
+  const canvasWrapper = document.getElementById('canvasWrapper');
+  const canvas = document.getElementById('mainCanvas');
+  const ctx = canvas.getContext('2d');
+
+  // Controls
+  const targetColorInput = document.getElementById('targetColor');
+  const colorHexText = document.getElementById('colorHexText');
+  const autoDetectCornersBtn = document.getElementById('autoDetectCornersBtn');
+  const toleranceSlider = document.getElementById('toleranceSlider');
+  const tolVal = document.getElementById('tolVal');
+  const featherSlider = document.getElementById('featherSlider');
+  const featherVal = document.getElementById('featherVal');
+  const smoothSlider = document.getElementById('smoothSlider');
+  const smoothVal = document.getElementById('smoothVal');
+  const modeFloodBtn = document.getElementById('modeFlood');
+  const modeAllBtn = document.getElementById('modeAll');
+
+  // Brush Controls
+  const toolProtectBtn = document.getElementById('toolProtect');
+  const toolEraseBtn = document.getElementById('toolErase');
+  const toolPipetteBtn = document.getElementById('toolPipette');
+  const protectColorInput = document.getElementById('protectColorInput');
+  const eraseColorInput = document.getElementById('eraseColorInput');
+  const brushSizeSlider = document.getElementById('brushSizeSlider');
+  const brushSizeVal = document.getElementById('brushSizeVal');
+  const showMaskCheckbox = document.getElementById('showMaskCheckbox');
+  const clearMaskBtn = document.getElementById('clearMaskBtn');
+
+  const resetBtn = document.getElementById('resetBtn');
+  const downloadPngBtn = document.getElementById('downloadPngBtn');
+  const downloadWebpBtn = document.getElementById('downloadWebpBtn');
+
+  // State
+  let originalImage = null;
+  let originalData = null; 
+  // maskState: 0=なし, 1=保護(Protect), 2=強制透過(Erase)
+  let maskState = null; 
+  let currentMode = 'flood'; 
+  let currentTool = 'none'; // 'none', 'protect', 'erase', 'pipette'
+  let isDrawing = false;
+  let lastPos = null;
+
+  // Drag & Drop
+  dropzone.addEventListener('click', () => fileInput.click());
+  workspace.addEventListener('dragover', (e) => e.preventDefault());
+  workspace.addEventListener('drop', (e) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      loadImage(e.dataTransfer.files[0]);
+    }
+  });
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      loadImage(e.target.files[0]);
+    }
+  });
+
+  function loadImage(file) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        originalImage = img;
+        canvas.width = img.width;
+        canvas.height = img.height;
+        maskState = new Uint8Array(img.width * img.height);
+        
+        ctx.drawImage(img, 0, 0);
+        originalData = ctx.getImageData(0, 0, img.width, img.height);
+
+        dropzone.classList.add('hidden');
+        canvasWrapper.classList.remove('hidden');
+
+        autoDetectCorners();
+        render();
+      };
+      img.src = event.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function autoDetectCorners() {
+    if (!originalData) return;
+    const w = originalData.width;
+    const h = originalData.height;
+    const data = originalData.data;
+
+    const corners = [
+      0,
+      (w - 1) * 4,
+      ((h - 1) * w) * 4,
+      ((h - 1) * w + (w - 1)) * 4
+    ];
+
+    let r = 0, g = 0, b = 0;
+    corners.forEach(idx => {
+      r += data[idx];
+      g += data[idx + 1];
+      b += data[idx + 2];
+    });
+    r = Math.round(r / 4);
+    g = Math.round(g / 4);
+    b = Math.round(b / 4);
+
+    const hex = rgbToHex(r, g, b);
+    targetColorInput.value = hex;
+    colorHexText.textContent = hex;
+  }
+
+  // Event Listeners
+  autoDetectCornersBtn.addEventListener('click', () => {
+    autoDetectCorners();
+    render();
+  });
+
+  targetColorInput.addEventListener('input', (e) => {
+    colorHexText.textContent = e.target.value;
+    render();
+  });
+
+  toleranceSlider.addEventListener('input', (e) => {
+    tolVal.textContent = e.target.value;
+    render();
+  });
+
+  featherSlider.addEventListener('input', (e) => {
+    featherVal.textContent = e.target.value;
+    render();
+  });
+
+  smoothSlider.addEventListener('input', (e) => {
+    smoothVal.textContent = e.target.value + 'px';
+    render();
+  });
+
+  brushSizeSlider.addEventListener('input', (e) => {
+    brushSizeVal.textContent = e.target.value + 'px';
+  });
+
+  showMaskCheckbox.addEventListener('change', () => {
+    render();
+  });
+
+  protectColorInput.addEventListener('input', () => {
+    if (showMaskCheckbox.checked) render();
+  });
+
+  eraseColorInput.addEventListener('input', () => {
+    if (showMaskCheckbox.checked) render();
+  });
+
+  modeFloodBtn.addEventListener('click', () => {
+    currentMode = 'flood';
+    modeFloodBtn.classList.add('active');
+    modeAllBtn.classList.remove('active');
+    render();
+  });
+  modeAllBtn.addEventListener('click', () => {
+    currentMode = 'all';
+    modeAllBtn.classList.add('active');
+    modeFloodBtn.classList.remove('active');
+    render();
+  });
+
+  // Tools
+  function updateToolUI() {
+    toolProtectBtn.className = 'btn btn-outline' + (currentTool === 'protect' ? ' active' : '');
+    toolEraseBtn.className = 'btn btn-outline' + (currentTool === 'erase' ? ' active-erase' : '');
+    toolPipetteBtn.className = 'btn btn-outline' + (currentTool === 'pipette' ? ' active' : '');
+  }
+
+  toolProtectBtn.addEventListener('click', () => {
+    currentTool = (currentTool === 'protect') ? 'none' : 'protect';
+    updateToolUI();
+  });
+
+  toolEraseBtn.addEventListener('click', () => {
+    currentTool = (currentTool === 'erase') ? 'none' : 'erase';
+    updateToolUI();
+  });
+
+  toolPipetteBtn.addEventListener('click', () => {
+    currentTool = (currentTool === 'pipette') ? 'none' : 'pipette';
+    updateToolUI();
+  });
+
+  clearMaskBtn.addEventListener('click', () => {
+    if (!maskState) return;
+    maskState.fill(0);
+    render();
+  });
+
+  resetBtn.addEventListener('click', () => {
+    if (!originalImage) return;
+    if (maskState) maskState.fill(0);
+    autoDetectCorners();
+    render();
+  });
+
+  document.querySelectorAll('[data-bg]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[data-bg]').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      canvasWrapper.className = 'canvas-wrapper ' + btn.getAttribute('data-bg');
+    });
+  });
+
+  // Mouse & Touch Handling for Canvas
+  canvas.addEventListener('mousedown', (e) => {
+    if (!originalData) return;
+    const pos = getCanvasPos(e);
+
+    if (currentTool === 'pipette') {
+      const idx = (pos.y * originalData.width + pos.x) * 4;
+      const hex = rgbToHex(originalData.data[idx], originalData.data[idx + 1], originalData.data[idx + 2]);
+      targetColorInput.value = hex;
+      colorHexText.textContent = hex;
+      currentTool = 'none';
+      updateToolUI();
+      render();
+      return;
+    }
+
+    if (currentTool === 'protect' || currentTool === 'erase') {
+      isDrawing = true;
+      lastPos = pos;
+      applyBrush(pos.x, pos.y, currentTool === 'protect' ? 1 : 2);
+      render();
+    }
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (isDrawing && (currentTool === 'protect' || currentTool === 'erase')) {
+      const pos = getCanvasPos(e);
+      // 連続補間描画
+      drawBrushLine(lastPos.x, lastPos.y, pos.x, pos.y, currentTool === 'protect' ? 1 : 2);
+      lastPos = pos;
+      render();
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (isDrawing) {
+      isDrawing = false;
+      lastPos = null;
+      render();
+    }
+  });
+
+  function getCanvasPos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: Math.floor((e.clientX - rect.left) * scaleX),
+      y: Math.floor((e.clientY - rect.top) * scaleY)
+    };
+  }
+
+  function applyBrush(cx, cy, val) {
+    const r = parseInt(brushSizeSlider.value, 10) / 2;
+    const w = canvas.width;
+    const h = canvas.height;
+    const r2 = r * r;
+
+    const minX = Math.max(0, Math.floor(cx - r));
+    const maxX = Math.min(w - 1, Math.ceil(cx + r));
+    const minY = Math.max(0, Math.floor(cy - r));
+    const maxY = Math.min(h - 1, Math.ceil(cy + r));
+
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        if ((x - cx)**2 + (y - cy)**2 <= r2) {
+          maskState[y * w + x] = val; // 相反関係：上書き（保護なら1、透過なら2）
+        }
+      }
+    }
+  }
+
+  function drawBrushLine(x0, y0, x1, y1, val) {
+    const dist = Math.hypot(x1 - x0, y1 - y0);
+    const step = 2;
+    if (dist === 0) {
+      applyBrush(x0, y0, val);
+      return;
+    }
+    for (let t = 0; t <= dist; t += step) {
+      const x = Math.round(x0 + (x1 - x0) * (t / dist));
+      const y = Math.round(y0 + (y1 - y0) * (t / dist));
+      applyBrush(x, y, val);
+    }
+  }
+
+  // アルファチャンネル平滑化
+  function smoothAlphaChannel(alphaArray, w, h, radius) {
+    if (radius <= 0) return alphaArray;
+    
+    const r = Math.ceil(radius);
+    const temp = new Float32Array(w * h);
+    const out = new Float32Array(w * h);
+
+    // 水平
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        let sum = 0;
+        let count = 0;
+        for (let kx = -r; kx <= r; kx++) {
+          const nx = x + kx;
+          if (nx >= 0 && nx < w) {
+            sum += alphaArray[y * w + nx];
+            count++;
+          }
+        }
+        temp[y * w + x] = sum / count;
+      }
+    }
+
+    // 垂直
+    for (let x = 0; x < w; x++) {
+      for (let y = 0; y < h; y++) {
+        let sum = 0;
+        let count = 0;
+        for (let ky = -r; ky <= r; ky++) {
+          const ny = y + ky;
+          if (ny >= 0 && ny < h) {
+            sum += temp[ny * w + x];
+            count++;
+          }
+        }
+        out[y * w + x] = sum / count;
+      }
+    }
+
+    return out;
+  }
+
+  // コア画像生成（マスク色混入なし）
+  function generateProcessedImageData() {
+    if (!originalData || !maskState) return null;
+
+    const w = originalData.width;
+    const h = originalData.height;
+    const target = hexToRgb(targetColorInput.value);
+    const tol = parseFloat(toleranceSlider.value);
+    const feather = parseFloat(featherSlider.value);
+    const smoothRadius = parseFloat(smoothSlider.value);
+
+    const output = ctx.createImageData(w, h);
+    const src = originalData.data;
+    const dst = output.data;
+
+    let alphaMap = new Float32Array(w * h);
+
+    if (currentMode === 'flood') {
+      const visited = new Uint8Array(w * h);
+      const queue = new Int32Array(w * h);
+      let head = 0, tail = 0;
+
+      alphaMap.fill(1.0);
+
+      for (let x = 0; x < w; x++) {
+        queue[tail++] = x;
+        visited[x] = 1;
+        const bIdx = (h - 1) * w + x;
+        queue[tail++] = bIdx;
+        visited[bIdx] = 1;
+      }
+      for (let y = 1; y < h - 1; y++) {
+        const lIdx = y * w;
+        queue[tail++] = lIdx;
+        visited[lIdx] = 1;
+        const rIdx = y * w + (w - 1);
+        queue[tail++] = rIdx;
+        visited[rIdx] = 1;
+      }
+
+      while (head < tail) {
+        const curr = queue[head++];
+        const px = curr % w;
+        const py = Math.floor(curr / w);
+        const idx = curr * 4;
+
+        // 保護マスク(1)は透過探索をブロック
+        if (maskState[curr] === 1) continue;
+
+        const dist = Math.sqrt((src[idx] - target.r)**2 + (src[idx + 1] - target.g)**2 + (src[idx + 2] - target.b)**2);
+
+        if (dist <= tol + feather) {
+          if (dist <= tol) {
+            alphaMap[curr] = 0;
+          } else {
+            alphaMap[curr] = (dist - tol) / feather;
+          }
+
+          const neighbors = [
+            px > 0 ? curr - 1 : -1,
+            px < w - 1 ? curr + 1 : -1,
+            py > 0 ? curr - w : -1,
+            py < h - 1 ? curr + w : -1
+          ];
+
+          for (let i = 0; i < 4; i++) {
+            const n = neighbors[i];
+            if (n !== -1 && !visited[n]) {
+              visited[n] = 1;
+              queue[tail++] = n;
+            }
+          }
+        }
+      }
+
+    } else {
+      for (let i = 0; i < w * h; i++) {
+        if (maskState[i] === 1) {
+          alphaMap[i] = 1.0;
+          continue;
+        }
+        const idx = i * 4;
+        const dist = Math.sqrt((src[idx] - target.r)**2 + (src[idx + 1] - target.g)**2 + (src[idx + 2] - target.b)**2);
+        if (dist <= tol) {
+          alphaMap[i] = 0;
+        } else if (dist <= tol + feather) {
+          alphaMap[i] = (dist - tol) / feather;
+        } else {
+          alphaMap[i] = 1.0;
+        }
+      }
+    }
+
+    // 手動透過マスク(2)の強制適用（どんな色でも完全透過化）
+    for (let i = 0; i < w * h; i++) {
+      if (maskState[i] === 2) {
+        alphaMap[i] = 0;
+      }
+    }
+
+    // 境界ブレンド
+    if (smoothRadius > 0) {
+      alphaMap = smoothAlphaChannel(alphaMap, w, h, smoothRadius);
+    }
+
+    // 出力データ構築
+    for (let i = 0; i < w * h; i++) {
+      const idx = i * 4;
+      dst[idx] = src[idx];
+      dst[idx + 1] = src[idx + 1];
+      dst[idx + 2] = src[idx + 2];
+
+      if (maskState[i] === 1) {
+        dst[idx + 3] = src[idx + 3]; // 保護領域
+      } else {
+        dst[idx + 3] = Math.round(src[idx + 3] * alphaMap[i]);
+      }
+    }
+
+    return output;
+  }
+
+  // プレビュー描画（マスクオーバーレイ表示）
+  function render() {
+    if (!originalData) return;
+    const processed = generateProcessedImageData();
+    if (!processed) return;
+
+    ctx.putImageData(processed, 0, 0);
+
+    // マスク表示が有効な場合、半透明でブレンド表示
+    if (showMaskCheckbox.checked && maskState) {
+      const pColor = hexToRgb(protectColorInput.value);
+      const eColor = hexToRgb(eraseColorInput.value);
+      const w = canvas.width;
+      const h = canvas.height;
+      
+      const overlay = ctx.createImageData(w, h);
+      const oData = overlay.data;
+
+      for (let i = 0; i < w * h; i++) {
+        const state = maskState[i];
+        if (state === 1) {
+          // 保護マスク
+          const idx = i * 4;
+          oData[idx] = pColor.r;
+          oData[idx + 1] = pColor.g;
+          oData[idx + 2] = pColor.b;
+          oData[idx + 3] = 95; // ~37% alpha
+        } else if (state === 2) {
+          // 透過マスク
+          const idx = i * 4;
+          oData[idx] = eColor.r;
+          oData[idx + 1] = eColor.g;
+          oData[idx + 2] = eColor.b;
+          oData[idx + 3] = 95;
+        }
+      }
+
+      // オフスクリーンCanvasでブレンド描画
+      const tempC = document.createElement('canvas');
+      tempC.width = w;
+      tempC.height = h;
+      tempC.getContext('2d').putImageData(overlay, 0, 0);
+      ctx.drawImage(tempC, 0, 0);
+    }
+  }
+
+  // 保存処理
+  downloadPngBtn.addEventListener('click', () => {
+    exportImage('image/png', 'transparent_image.png');
+  });
+
+  downloadWebpBtn.addEventListener('click', () => {
+    exportImage('image/webp', 'transparent_image.webp');
+  });
+
+  function exportImage(mimeType, filename) {
+    if (!originalImage) return;
+
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = canvas.width;
+    exportCanvas.height = canvas.height;
+    const exportCtx = exportCanvas.getContext('2d');
+
+    const cleanData = generateProcessedImageData();
+    exportCtx.putImageData(cleanData, 0, 0);
+
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = exportCanvas.toDataURL(mimeType, 1.0);
+    link.click();
+  }
+
+  // Helpers
+  function hexToRgb(hex) {
+    const bigint = parseInt(hex.slice(1), 16);
+    return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 };
+  }
+
+  function rgbToHex(r, g, b) {
+    return "#" + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+  }
+</script>
+</body>
+</html>
