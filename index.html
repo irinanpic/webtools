@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja" class="h-full bg-slate-950 text-slate-100">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -14,24 +15,30 @@
       width: 6px;
       height: 6px;
     }
+
     ::-webkit-scrollbar-track {
       background: #0f172a;
     }
+
     ::-webkit-scrollbar-thumb {
       background: #334155;
       border-radius: 3px;
     }
+
     ::-webkit-scrollbar-thumb:hover {
       background: #475569;
     }
   </style>
 </head>
+
 <body class="h-full flex flex-col font-sans antialiased selection:bg-indigo-500 selection:text-white">
 
   <!-- ヘッダー -->
-  <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between shrink-0 z-20 shadow-md">
+  <header
+    class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between shrink-0 z-20 shadow-md">
     <div class="flex items-center space-x-3">
-      <div class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+      <div
+        class="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
         <i class="fa-solid fa-shapes text-sm"></i>
       </div>
       <div>
@@ -39,7 +46,8 @@
         <p class="text-[11px] text-slate-400 mt-1">Web Image Processing Tool Suite</p>
       </div>
     </div>
-    <div id="currentToolTitle" class="text-xs text-slate-400 font-medium bg-slate-950/60 px-3 py-1.5 rounded-lg border border-slate-800 flex items-center gap-2">
+    <div id="currentToolTitle"
+      class="text-xs text-slate-400 font-medium bg-slate-950/60 px-3 py-1.5 rounded-lg border border-slate-800 flex items-center gap-2">
       <i class="fa-solid fa-circle-info text-indigo-400"></i>
       <span id="activeToolName">ツールを選択してください</span>
     </div>
@@ -61,7 +69,7 @@
 
       <!-- フッター情報 -->
       <div class="p-3 border-t border-slate-800 text-[10px] text-slate-500 text-center">
-        &copy; Image Tools Dashboard
+        Powered by <a href="https://gemini.google.com/">Gemini</a>
       </div>
     </aside>
 
@@ -71,8 +79,10 @@
       <iframe id="contentFrame" class="w-full h-full border-0 hidden" title="ツールコンテンツ"></iframe>
 
       <!-- 初期状態・ロード中プレースホルダー -->
-      <div id="placeholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 p-6 text-center">
-        <div class="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600 mb-4 shadow-inner">
+      <div id="placeholder"
+        class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 p-6 text-center">
+        <div
+          class="w-16 h-16 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-600 mb-4 shadow-inner">
           <i class="fa-solid fa-arrow-left text-2xl animate-pulse"></i>
         </div>
         <p class="text-sm font-medium text-slate-400 mb-1">左側のリストから使用したいツールを選択してください</p>
@@ -116,7 +126,7 @@
         path: 'image_merger.html', // 実際のファイルパスに合わせて変更してください
         desc: '画像貼り付け・レイアウトツール'
       },
-	  {
+      {
         id: 'transparent-png-tool',
         title: ' 透過画像ジェネレーター',
         icon: 'fa-eraser',
@@ -142,12 +152,11 @@
       PAGES.forEach(page => {
         const isActive = page.id === activePageId;
         const btn = document.createElement('button');
-        
-        btn.className = `w-full text-left p-3 rounded-xl border transition-all flex items-start space-x-3 group ${
-          isActive 
-            ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-200 shadow-md' 
+
+        btn.className = `w-full text-left p-3 rounded-xl border transition-all flex items-start space-x-3 group ${isActive
+            ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-200 shadow-md'
             : 'bg-slate-950/40 border-slate-800/80 hover:bg-slate-800/60 hover:border-slate-700 text-slate-300'
-        }`;
+          }`;
 
         btn.innerHTML = `
           <div class="w-8 h-8 rounded-lg ${isActive ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400 group-hover:text-indigo-400'} flex items-center justify-center shrink-0 transition-colors mt-0.5">
@@ -180,7 +189,7 @@
       // iframe への表示切替
       placeholder.classList.add('hidden');
       contentFrame.classList.remove('hidden');
-      
+
       // iframe にソースを設定
       contentFrame.src = page.path;
     }
@@ -207,4 +216,5 @@
     });
   </script>
 </body>
+
 </html>
