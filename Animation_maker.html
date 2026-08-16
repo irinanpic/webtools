@@ -9,8 +9,10 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <!-- LameJS for MP3 Encoding -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+  <!-- LameJS for MP3 Encoding (Cloudflareの最適化を回避) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js" data-cfasync="false"></script>
+  <!-- MP4 Muxer for H.264 MP4 Export (Cloudflareの最適化を回避) -->
+  <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@0.5.1/build/mp4-muxer.min.js" data-cfasync="false"></script>
 
   <style>
     ::-webkit-scrollbar {
@@ -232,7 +234,7 @@
 
       </section>
 
-      <!-- Bottom Timeline Panel (Fixed Height & Responsive Scrollable Tracks) -->
+      <!-- Bottom Timeline Panel -->
       <section id="timelinePanel" class="h-72 bg-slate-800/95 border-t border-slate-700/80 flex flex-col shrink-0 relative z-10">
         
         <!-- Timeline Header Controls -->
@@ -266,8 +268,8 @@
         <div id="tracksScrollContainer" class="flex-1 overflow-x-auto overflow-y-auto p-3 relative space-y-3">
           
           <!-- Playhead Line Indicator -->
-          <div id="playheadLine" class="absolute top-0 bottom-0 w-0.5 bg-rose-500 z-30 pointer-events-none hidden">
-            <div class="w-3 h-3 bg-rose-500 rotate-45 -ml-1.25 -mt-1 rounded-sm shadow"></div>
+          <div id="playheadLine" class="absolute top-0 bottom-0 w-0.5 bg-rose-500 z-30 pointer-events-none hidden -translate-x-1/2">
+            <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-3 h-3 bg-rose-500 rotate-45 rounded-sm shadow"></div>
           </div>
 
           <!-- Image Track -->
@@ -330,6 +332,11 @@
         
         <!-- TAB 1: 画像アニメ -->
         <div id="tabContentImage" class="export-tab-content space-y-3">
+          <div class="bg-indigo-950/40 border border-indigo-800/50 rounded-lg p-2.5 text-[11px] text-indigo-200 flex items-start space-x-2">
+            <i class="fa-solid fa-circle-info text-indigo-400 mt-0.5"></i>
+            <span>音声は除外され、<strong>画像トラックのみ</strong>を使ったアニメーション画像を作成します。</span>
+          </div>
+
           <div class="space-y-1">
             <label class="text-xs text-slate-300 font-semibold block">出力フォーマット</label>
             <select id="exportImgFormatSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
@@ -339,7 +346,7 @@
             </select>
           </div>
 
-          <!-- WebP Options (Only visible when WebP is selected) -->
+          <!-- WebP Quality Option -->
           <div id="webpOptionsBox" class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-3">
             <div class="flex items-center justify-between text-xs">
               <span class="text-slate-300 font-medium">WebP 圧縮モード:</span>
@@ -355,27 +362,29 @@
               </div>
             </div>
 
-            <div id="webpQualityBox" class="space-y-1 opacity-50 pointer-events-none">
+            <div id="webpQualityBox" class="space-y-1 opacity-50 pointer-events-none transition-opacity">
               <div class="flex justify-between text-xs">
                 <span class="text-slate-400">画質 (Quality)</span>
-                <span id="webpQualityVal" class="font-mono text-indigo-400 font-bold">90%</span>
+                <span id="webpQualityVal" class="font-mono text-indigo-400 font-bold">85%</span>
               </div>
-              <input type="range" id="webpQualitySlider" min="10" max="100" value="90" class="w-full accent-indigo-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer">
+              <input type="range" id="webpQualitySlider" min="10" max="100" value="85" class="w-full accent-indigo-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer">
             </div>
           </div>
         </div>
 
         <!-- TAB 2: 動画 -->
         <div id="tabContentVideo" class="export-tab-content space-y-3 hidden">
+          <div class="bg-indigo-950/40 border border-indigo-800/50 rounded-lg p-2.5 text-[11px] text-indigo-200 flex items-start space-x-2">
+            <i class="fa-solid fa-circle-info text-indigo-400 mt-0.5"></i>
+            <span><strong>画像と音楽の両方</strong>を使った動画を作成します。</span>
+          </div>
+
           <div class="space-y-1">
             <label class="text-xs text-slate-300 font-semibold block">動画フォーマット</label>
             <select id="exportVideoFormatSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
               <option value="webm" selected>WebM 動画 (.webm)</option>
               <option value="mp4">MP4 動画 (.mp4)</option>
             </select>
-            <p id="mp4SupportNote" class="text-[10px] text-amber-400 hidden">
-              ※ご使用のブラウザがMP4ネイティブ録画をサポートしていない場合はWebMをお試しください。
-            </p>
           </div>
 
           <div class="grid grid-cols-2 gap-3">
@@ -402,16 +411,20 @@
 
         <!-- TAB 3: 音楽のみ -->
         <div id="tabContentAudio" class="export-tab-content space-y-3 hidden">
+          <div class="bg-emerald-950/40 border border-emerald-800/50 rounded-lg p-2.5 text-[11px] text-emerald-200 flex items-start space-x-2">
+            <i class="fa-solid fa-circle-info text-emerald-400 mt-0.5"></i>
+            <span>画像は除外され、<strong>音楽トラックのみ</strong>を使ったオーディオファイルを作成します。</span>
+          </div>
+
           <div class="space-y-1">
             <label class="text-xs text-slate-300 font-semibold block">音声フォーマット</label>
             <select id="exportAudioFormatSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
               <option value="mp3" selected>MP3 音声 (.mp3)</option>
               <option value="wav">WAV 非圧縮 (.wav)</option>
-              <option value="ogg">OGG 音声 (.ogg)</option>
+              <option value="ogg">OGG Vorbis (.ogg)</option>
             </select>
           </div>
 
-          <!-- Bitrate Selector for Compressed Audio (MP3/OGG) -->
           <div id="audioBitrateBox" class="space-y-1">
             <label class="text-xs text-slate-300 block">ビットレート (圧縮率)</label>
             <select id="exportAudioBitrateSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
@@ -423,7 +436,7 @@
           </div>
         </div>
 
-        <!-- Progress Bar (Hidden by default) -->
+        <!-- Progress Bar -->
         <div id="exportProgressBox" class="space-y-1.5 hidden pt-2 border-t border-slate-700">
           <div class="flex justify-between text-xs">
             <span id="exportProgressText" class="text-indigo-400 font-semibold">書き出し中...</span>
@@ -450,19 +463,19 @@
     </div>
   </div>
 
-  <!-- Toast Notification Container -->
+  <!-- Toast Container -->
   <div id="toastContainer" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none"></div>
 
   <script>
-    // Application Global State
+    // Global Application State
     const state = {
       canvasWidth: 640,
       canvasHeight: 480,
       bgColor: '#0f172a',
       isTransparent: false,
       
-      frames: [], // [{ id, img, originalWidth, originalHeight, duration: 1.0, name }]
-      audioClips: [], // [{ id, buffer, duration: 10.0, originalDuration: 10.0, startTime: 0, name }]
+      frames: [], // [{ id, img, originalWidth, originalHeight, duration: 1.0, name, fileType, fileSize }]
+      audioClips: [], // [{ id, buffer, duration: 10.0, originalDuration: 10.0, startTime: 0, name, fileType, fileSize, sampleRate, numberOfChannels }]
 
       selectedFrameId: null,
       selectedAudioId: null,
@@ -473,11 +486,11 @@
       volume: 1.0,
       isMuted: false,
 
-      pixelsPerSecond: 50, // Timeline scale
-      activeExportTab: 'image' // 'image', 'video', 'audio'
+      pixelsPerSecond: 50,
+      activeExportTab: 'image'
     };
 
-    // Undo / Redo History Stack
+    // History Stack for Undo/Redo
     const historyStack = [];
     let historyIndex = -1;
     const MAX_HISTORY = 30;
@@ -487,7 +500,6 @@
         historyStack.splice(historyIndex + 1);
       }
       
-      // Deep snapshot
       const snapshot = {
         canvasWidth: state.canvasWidth,
         canvasHeight: state.canvasHeight,
@@ -599,14 +611,12 @@
 
       exportImgFormatSelect: document.getElementById('exportImgFormatSelect'),
       webpOptionsBox: document.getElementById('webpOptionsBox'),
-      webpQualityBox: document.getElementById('webpQualityBox'),
       webpQualitySlider: document.getElementById('webpQualitySlider'),
       webpQualityVal: document.getElementById('webpQualityVal'),
 
       exportVideoFormatSelect: document.getElementById('exportVideoFormatSelect'),
       exportVideoFpsSelect: document.getElementById('exportVideoFpsSelect'),
       exportVideoBitrateSelect: document.getElementById('exportVideoBitrateSelect'),
-      mp4SupportNote: document.getElementById('mp4SupportNote'),
 
       exportAudioFormatSelect: document.getElementById('exportAudioFormatSelect'),
       exportAudioBitrateSelect: document.getElementById('exportAudioBitrateSelect'),
@@ -625,17 +635,13 @@
       toast.innerHTML = `<i class="fa-solid fa-circle-info"></i><span>${message}</span>`;
       document.getElementById('toastContainer').appendChild(toast);
 
-      setTimeout(() => {
-        toast.classList.remove('translate-y-2', 'opacity-0');
-      }, 10);
-
+      setTimeout(() => toast.classList.remove('translate-y-2', 'opacity-0'), 10);
       setTimeout(() => {
         toast.classList.add('opacity-0', 'translate-y-2');
         setTimeout(() => toast.remove(), 300);
-      }, 3000);
+      }, 3500);
     }
 
-    // Web Audio Context Singleton
     let audioCtx = null;
     function getAudioContext() {
       if (!audioCtx) {
@@ -647,7 +653,32 @@
       return audioCtx;
     }
 
-    // File Inputs & Drag & Drop Handling
+    function formatBytes(bytes) {
+      if (!bytes || bytes === 0) return '不明';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    function formatFileType(type, filename) {
+      if (type && type.includes('/')) {
+        const sub = type.split('/')[1].toUpperCase();
+        return sub.replace('X-', '').replace('MPEG', 'MP3').replace('QUICKTIME', 'MOV');
+      }
+      if (filename && filename.includes('.')) {
+        return filename.split('.').pop().toUpperCase();
+      }
+      return 'UNKNOWN';
+    }
+
+    function formatTime(seconds) {
+      if (isNaN(seconds)) return '00:00';
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+    }
+
     elements.addImagesBtn.addEventListener('click', () => elements.fileInputImages.click());
     elements.addAudioBtn.addEventListener('click', () => elements.fileInputAudio.click());
     elements.dropzone.addEventListener('click', () => elements.fileInputImages.click());
@@ -670,10 +701,10 @@
       const audioFiles = [];
 
       for (const file of Array.from(files)) {
-        const type = file.type;
+        const type = file.type || '';
         const name = file.name.toLowerCase();
 
-        if (forcedType === 'image' || type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|bmp|svg)$/.test(name)) {
+        if (forcedType === 'image' || type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|bmp|svg|avif|heic)$/.test(name)) {
           imgFiles.push(file);
         } else if (forcedType === 'audio' || type.startsWith('audio/') || /\.(mp3|wav|ogg|aac|m4a|flac)$/.test(name)) {
           audioFiles.push(file);
@@ -688,7 +719,6 @@
           if (frame) state.frames.push(frame);
         }
         
-        // Auto scale image total duration to match audio length if audio exists
         const totalAudioLen = state.audioClips.reduce((acc, c) => Math.max(acc, c.duration), 0);
         if (totalAudioLen > 0 && state.frames.length > 0) {
           const perFrameDur = totalAudioLen / state.frames.length;
@@ -728,10 +758,15 @@
               originalWidth: img.width,
               originalHeight: img.height,
               duration: 1.0,
-              name: file.name
+              name: file.name,
+              fileType: file.type || file.name,
+              fileSize: file.size
             });
           };
-          img.onerror = () => resolve(null);
+          img.onerror = () => {
+            showToast(`画像『${file.name}』の読み込みに失敗しました。`, 'error');
+            resolve(null);
+          };
           img.src = e.target.result;
         };
         reader.readAsDataURL(file);
@@ -752,10 +787,14 @@
               duration: audioBuf.duration,
               originalDuration: audioBuf.duration,
               startTime: 0,
-              name: file.name
+              name: file.name,
+              fileType: file.type || file.name,
+              fileSize: file.size,
+              sampleRate: audioBuf.sampleRate,
+              numberOfChannels: audioBuf.numberOfChannels
             });
           } catch (err) {
-            showToast('音声ファイルの読み込みに失敗しました。', 'error');
+            showToast(`音声『${file.name}』の読み込みに失敗しました。`, 'error');
             resolve(null);
           }
         };
@@ -788,7 +827,6 @@
       canvas.height = state.canvasHeight;
       const ctx = canvas.getContext('2d');
 
-      // Clear Canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       if (!state.isTransparent) {
@@ -798,7 +836,6 @@
 
       if (state.frames.length === 0) return;
 
-      // Determine current frame by currentTime
       let elapsed = 0;
       let currentFrame = state.frames[0];
       for (const frame of state.frames) {
@@ -813,7 +850,6 @@
       }
 
       if (currentFrame && currentFrame.img) {
-        // Render letterboxed image
         const img = currentFrame.img;
         const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
         const w = img.width * scale;
@@ -825,7 +861,6 @@
       }
     }
 
-    // Playback Engine
     let playAnimationId = null;
     let lastPlayTimestamp = null;
     let activeAudioSources = [];
@@ -885,10 +920,9 @@
       elements.currentTimeText.textContent = state.currentTime.toFixed(1).padStart(4, '0') + 's';
       elements.seekbar.value = state.currentTime;
 
-      // Update playhead on timeline
       if (state.totalDuration > 0) {
         elements.playheadLine.classList.remove('hidden');
-        const playheadX = state.currentTime * state.pixelsPerSecond + 12; // 12px offset
+        const playheadX = state.currentTime * state.pixelsPerSecond + 19;
         elements.playheadLine.style.left = playheadX + 'px';
       } else {
         elements.playheadLine.classList.add('hidden');
@@ -950,41 +984,10 @@
       if (state.isPlaying) playAudioClips();
     });
 
-    // Timeline Zoom Slider
     elements.timelineZoomSlider.addEventListener('input', (e) => {
       state.pixelsPerSecond = parseInt(e.target.value, 10);
       renderTimeline();
       updatePlaybackUI();
-    });
-
-    // Synchronize Duration Actions
-    elements.syncImgToAudioBtn.addEventListener('click', () => {
-      const audioTotal = state.audioClips.reduce((sum, a) => sum + a.duration, 0);
-      if (audioTotal <= 0 || state.frames.length === 0) {
-        showToast('同期を行うための画像および音楽データが必要です。', 'error');
-        return;
-      }
-      const perFrame = audioTotal / state.frames.length;
-      state.frames.forEach(f => f.duration = perFrame);
-      recalculateTotalDuration();
-      renderTimeline();
-      commitStateChange();
-      showToast('画像の合計時間を音楽に同期しました！', 'success');
-    });
-
-    elements.syncAudioToImgBtn.addEventListener('click', () => {
-      const imgTotal = state.frames.reduce((sum, f) => sum + f.duration, 0);
-      if (imgTotal <= 0 || state.audioClips.length === 0) {
-        showToast('同期を行うための画像および音楽データが必要です。', 'error');
-        return;
-      }
-      state.audioClips.forEach(a => {
-        a.duration = Math.min(imgTotal, a.originalDuration - a.startTime);
-      });
-      recalculateTotalDuration();
-      renderTimeline();
-      commitStateChange();
-      showToast('音楽の時間を画像の合計に同期しました！', 'success');
     });
 
     function renderTimeline() {
@@ -1006,7 +1009,8 @@
         const card = document.createElement('div');
         const isSelected = state.selectedFrameId === frame.id;
 
-        card.className = `relative shrink-0 h-16 rounded-xl overflow-hidden border transition-all cursor-pointer group flex items-center justify-between ${
+        card.draggable = true;
+        card.className = `relative shrink-0 h-16 rounded-xl overflow-hidden border transition-all cursor-grab active:cursor-grabbing group flex items-center justify-between ${
           isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50 bg-indigo-950/60' : 'border-slate-700 bg-slate-800 hover:border-slate-600'
         }`;
         card.style.width = widthPx + 'px';
@@ -1015,8 +1019,14 @@
           <div class="absolute inset-0 bg-checker opacity-30 pointer-events-none"></div>
           <img src="${frame.img.src}" class="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-80 pointer-events-none">
           <div class="relative z-10 px-2 py-1 flex flex-col justify-between h-full w-full pointer-events-none">
-            <span class="text-[10px] font-bold text-white truncate drop-shadow">${index + 1}. ${frame.name}</span>
-            <span class="text-[10px] font-mono text-indigo-300 font-semibold drop-shadow">${frame.duration.toFixed(1)}s</span>
+            <div class="flex items-center justify-between">
+              <span class="text-[10px] font-bold text-white truncate drop-shadow">${index + 1}. ${frame.name}</span>
+              <span class="text-[9px] bg-slate-900/80 px-1 rounded text-indigo-300 font-mono shrink-0 ml-1">${formatFileType(frame.fileType, frame.name)}</span>
+            </div>
+            <div class="flex items-center justify-between text-[10px]">
+              <span class="font-mono text-slate-300 drop-shadow text-[9px]">${frame.originalWidth}×${frame.originalHeight}</span>
+              <span class="font-mono text-indigo-300 font-semibold drop-shadow">${frame.duration.toFixed(1)}s</span>
+            </div>
           </div>
           <div class="resize-handle-r" data-type="frame" data-id="${frame.id}"></div>
         `;
@@ -1027,6 +1037,52 @@
           state.selectedAudioId = null;
           renderTimeline();
           updateInspector();
+        });
+
+        card.addEventListener('dragstart', (e) => {
+          if (e.target.classList.contains('resize-handle-r')) {
+            e.preventDefault();
+            return;
+          }
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'frame', index }));
+          card.classList.add('opacity-40', 'scale-95');
+        });
+
+        card.addEventListener('dragend', () => {
+          card.classList.remove('opacity-40', 'scale-95');
+          document.querySelectorAll('#imageTrack > div').forEach(c => {
+            c.classList.remove('ring-2', 'ring-indigo-400', 'border-indigo-400');
+          });
+        });
+
+        card.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          card.classList.add('ring-2', 'ring-indigo-400', 'border-indigo-400');
+        });
+
+        card.addEventListener('dragleave', () => {
+          card.classList.remove('ring-2', 'ring-indigo-400', 'border-indigo-400');
+        });
+
+        card.addEventListener('drop', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          card.classList.remove('ring-2', 'ring-indigo-400', 'border-indigo-400');
+
+          try {
+            const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+            if (data.type === 'frame' && data.index !== index) {
+              const movedItem = state.frames.splice(data.index, 1)[0];
+              state.frames.splice(index, 0, movedItem);
+              renderTimeline();
+              renderPreviewCanvas();
+              updateInspector();
+              commitStateChange();
+              showToast('画像の順序を変更しました。', 'info');
+            }
+          } catch (err) {}
         });
 
         track.appendChild(card);
@@ -1049,15 +1105,19 @@
         const card = document.createElement('div');
         const isSelected = state.selectedAudioId === clip.id;
 
-        card.className = `relative shrink-0 h-12 rounded-xl overflow-hidden border transition-all cursor-pointer group flex items-center justify-between ${
+        card.draggable = true;
+        card.className = `relative shrink-0 h-12 rounded-xl overflow-hidden border transition-all cursor-grab active:cursor-grabbing group flex items-center justify-between ${
           isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/50 bg-emerald-950/60' : 'border-slate-700 bg-slate-800 hover:border-slate-600'
         }`;
         card.style.width = widthPx + 'px';
 
         card.innerHTML = `
           <div class="px-2 py-1 flex items-center justify-between h-full w-full pointer-events-none">
-            <span class="text-[10px] font-bold text-emerald-300 truncate"><i class="fa-solid fa-music mr-1"></i>${clip.name}</span>
-            <span class="text-[10px] font-mono text-slate-300 font-semibold">${clip.duration.toFixed(1)}s</span>
+            <div class="flex flex-col justify-center truncate pr-1">
+              <span class="text-[10px] font-bold text-emerald-300 truncate"><i class="fa-solid fa-music mr-1"></i>${clip.name}</span>
+              <span class="text-[9px] text-slate-400 font-mono truncate">${formatFileType(clip.fileType, clip.name)} • 原尺 ${clip.originalDuration.toFixed(1)}s</span>
+            </div>
+            <span class="text-[10px] font-mono text-slate-300 font-semibold shrink-0">${clip.duration.toFixed(1)}s</span>
           </div>
           <div class="resize-handle-r bg-emerald-500/40 hover:bg-emerald-400" data-type="audio" data-id="${clip.id}"></div>
         `;
@@ -1070,6 +1130,52 @@
           updateInspector();
         });
 
+        card.addEventListener('dragstart', (e) => {
+          if (e.target.classList.contains('resize-handle-r')) {
+            e.preventDefault();
+            return;
+          }
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', JSON.stringify({ type: 'audio', index }));
+          card.classList.add('opacity-40', 'scale-95');
+        });
+
+        card.addEventListener('dragend', () => {
+          card.classList.remove('opacity-40', 'scale-95');
+          document.querySelectorAll('#audioTrack > div').forEach(c => {
+            c.classList.remove('ring-2', 'ring-emerald-400', 'border-emerald-400');
+          });
+        });
+
+        card.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          card.classList.add('ring-2', 'ring-emerald-400', 'border-emerald-400');
+        });
+
+        card.addEventListener('dragleave', () => {
+          card.classList.remove('ring-2', 'ring-emerald-400', 'border-emerald-400');
+        });
+
+        card.addEventListener('drop', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          card.classList.remove('ring-2', 'ring-emerald-400', 'border-emerald-400');
+
+          try {
+            const data = JSON.parse(e.dataTransfer.getData('text/plain'));
+            if (data.type === 'audio' && data.index !== index) {
+              const movedItem = state.audioClips.splice(data.index, 1)[0];
+              state.audioClips.splice(index, 0, movedItem);
+              renderTimeline();
+              renderPreviewCanvas();
+              updateInspector();
+              commitStateChange();
+              showToast('音楽の順序を変更しました。', 'info');
+            }
+          } catch (err) {}
+        });
+
         track.appendChild(card);
       });
 
@@ -1078,6 +1184,7 @@
 
     function setupTrackDragResize() {
       document.querySelectorAll('.resize-handle-r').forEach(handle => {
+        handle.setAttribute('draggable', 'false');
         handle.addEventListener('mousedown', (e) => {
           e.stopPropagation();
           const type = handle.getAttribute('data-type');
@@ -1130,6 +1237,22 @@
         container.innerHTML = `
           <div class="space-y-3">
             <div class="text-xs font-bold text-indigo-400 truncate">${frame.name}</div>
+
+            <div class="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700/80 space-y-1.5 text-[11px]">
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="text-slate-400">画像サイズ:</span>
+                <span class="font-mono font-medium text-slate-100">${frame.originalWidth} × ${frame.originalHeight} px</span>
+              </div>
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="text-slate-400">ファイル種別:</span>
+                <span class="font-mono uppercase font-semibold text-indigo-300">${formatFileType(frame.fileType, frame.name)}</span>
+              </div>
+              ${frame.fileSize ? `
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="text-slate-400">ファイル容量:</span>
+                <span class="font-mono font-medium text-slate-100">${formatBytes(frame.fileSize)}</span>
+              </div>` : ''}
+            </div>
             
             <div class="space-y-1">
               <label class="text-[11px] text-slate-400 block">表示時間 (秒)</label>
@@ -1200,7 +1323,28 @@
         container.innerHTML = `
           <div class="space-y-3">
             <div class="text-xs font-bold text-emerald-400 truncate">${clip.name}</div>
-            
+
+            <div class="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700/80 space-y-1.5 text-[11px]">
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="text-slate-400">総再生時間:</span>
+                <span class="font-mono font-medium text-emerald-300">${clip.originalDuration.toFixed(1)}s (${formatTime(clip.originalDuration)})</span>
+              </div>
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="text-slate-400">ファイル種別:</span>
+                <span class="font-mono uppercase font-semibold text-emerald-300">${formatFileType(clip.fileType, clip.name)}</span>
+              </div>
+              ${clip.sampleRate ? `
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="text-slate-400">オーディオ構成:</span>
+                <span class="font-mono font-medium text-slate-100">${(clip.sampleRate / 1000).toFixed(1)} kHz / ${clip.numberOfChannels === 1 ? 'モノラル' : 'ステレオ'}</span>
+              </div>` : ''}
+              ${clip.fileSize ? `
+              <div class="flex justify-between items-center text-slate-300">
+                <span class="text-slate-400">ファイル容量:</span>
+                <span class="font-mono font-medium text-slate-100">${formatBytes(clip.fileSize)}</span>
+              </div>` : ''}
+            </div>
+
             <div class="space-y-1">
               <div class="flex justify-between items-center">
                 <label class="text-[11px] text-slate-400 block">タイムライン長 (秒)</label>
@@ -1261,26 +1405,20 @@
       }
     }
 
-    // Canvas Settings Listeners
-    function fitCanvasToFirstImage() {
-      if (state.frames.length > 0) {
-        const first = state.frames[0];
-        state.canvasWidth = first.originalWidth;
-        state.canvasHeight = first.originalHeight;
-        elements.canvasWidthInput.value = first.originalWidth;
-        elements.canvasHeightInput.value = first.originalHeight;
-        elements.resPresetSelect.value = 'fitFirst';
-        renderPreviewCanvas();
-        commitStateChange();
-      } else {
-        showToast('画像がタイムラインに追加されていません。先に画像を読み込んでください。', 'error');
-      }
-    }
-
     elements.resPresetSelect.addEventListener('change', (e) => {
       if (e.target.value === 'custom') return;
       if (e.target.value === 'fitFirst') {
-        fitCanvasToFirstImage();
+        if (state.frames.length > 0) {
+          const first = state.frames[0];
+          state.canvasWidth = first.originalWidth;
+          state.canvasHeight = first.originalHeight;
+          elements.canvasWidthInput.value = first.originalWidth;
+          elements.canvasHeightInput.value = first.originalHeight;
+          renderPreviewCanvas();
+          commitStateChange();
+        } else {
+          showToast('画像がありません。先に画像を読み込んでください。', 'error');
+        }
         return;
       }
       const [w, h] = e.target.value.split('x').map(Number);
@@ -1334,7 +1472,35 @@
       commitStateChange();
     });
 
-    // Undo / Redo / Clear All Buttons
+    elements.syncImgToAudioBtn.addEventListener('click', () => {
+      const audioTotal = state.audioClips.reduce((sum, a) => sum + a.duration, 0);
+      if (audioTotal <= 0 || state.frames.length === 0) {
+        showToast('同期を行うための画像および音楽データが必要です。', 'error');
+        return;
+      }
+      const perFrame = audioTotal / state.frames.length;
+      state.frames.forEach(f => f.duration = perFrame);
+      recalculateTotalDuration();
+      renderTimeline();
+      commitStateChange();
+      showToast('画像の合計時間を音楽に同期しました！', 'success');
+    });
+
+    elements.syncAudioToImgBtn.addEventListener('click', () => {
+      const imgTotal = state.frames.reduce((sum, f) => sum + f.duration, 0);
+      if (imgTotal <= 0 || state.audioClips.length === 0) {
+        showToast('同期を行うための画像および音楽データが必要です。', 'error');
+        return;
+      }
+      state.audioClips.forEach(a => {
+        a.duration = Math.min(imgTotal, a.originalDuration - a.startTime);
+      });
+      recalculateTotalDuration();
+      renderTimeline();
+      commitStateChange();
+      showToast('音楽の時間を画像の合計に同期しました！', 'success');
+    });
+
     elements.undoBtn.addEventListener('click', undo);
     elements.redoBtn.addEventListener('click', redo);
     
@@ -1364,11 +1530,18 @@
       }
     });
 
-    // Export Modal Controls
+    // Modal Events
     elements.openExportModalBtn.addEventListener('click', () => {
-      if (state.frames.length === 0) {
-        showToast('書き出す画像が選択されていません。先に画像を読み込んでください。', 'error');
-        return;
+      if (state.activeExportTab === 'image' || state.activeExportTab === 'video') {
+        if (state.frames.length === 0) {
+          showToast('書き出す画像が選択されていません。先に画像を読み込んでください。', 'error');
+          return;
+        }
+      } else if (state.activeExportTab === 'audio') {
+        if (state.audioClips.length === 0) {
+          showToast('書き出す音楽が選択されていません。先に音楽を読み込んでください。', 'error');
+          return;
+        }
       }
       elements.exportModal.classList.remove('hidden');
     });
@@ -1376,7 +1549,6 @@
     elements.closeExportModalBtn.addEventListener('click', () => elements.exportModal.classList.add('hidden'));
     elements.cancelExportBtn.addEventListener('click', () => elements.exportModal.classList.add('hidden'));
 
-    // Export Tabs Toggle
     function setExportTab(tabName) {
       state.activeExportTab = tabName;
       const tabs = [
@@ -1400,7 +1572,6 @@
     elements.tabBtnVideo.addEventListener('click', () => setExportTab('video'));
     elements.tabBtnAudio.addEventListener('click', () => setExportTab('audio'));
 
-    // Image Format Visibility Logic
     elements.exportImgFormatSelect.addEventListener('change', (e) => {
       if (e.target.value === 'webp') {
         elements.webpOptionsBox.classList.remove('hidden');
@@ -1409,18 +1580,20 @@
       }
     });
 
-    document.querySelectorAll('input[name="webpLossless"]').forEach(radio => {
-      radio.addEventListener('change', (e) => {
-        if (e.target.value === 'lossy') {
-          elements.webpQualityBox.classList.remove('opacity-50', 'pointer-events-none');
-        } else {
-          elements.webpQualityBox.classList.add('opacity-50', 'pointer-events-none');
-        }
-      });
-    });
-
     elements.webpQualitySlider.addEventListener('input', (e) => {
       elements.webpQualityVal.textContent = e.target.value + '%';
+    });
+
+    document.querySelectorAll('input[name="webpLossless"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        const qualityBox = document.getElementById('webpQualityBox');
+        if (!qualityBox) return;
+        if (e.target.value === 'lossy') {
+          qualityBox.classList.remove('opacity-50', 'pointer-events-none');
+        } else {
+          qualityBox.classList.add('opacity-50', 'pointer-events-none');
+        }
+      });
     });
 
     elements.exportAudioFormatSelect.addEventListener('change', (e) => {
@@ -1431,8 +1604,20 @@
       }
     });
 
-    // Start Export Handler
     elements.startExportBtn.addEventListener('click', async () => {
+      if (state.activeExportTab === 'image' && state.frames.length === 0) {
+        showToast('画像トラックに画像が追加されていません。', 'error');
+        return;
+      }
+      if (state.activeExportTab === 'video' && state.frames.length === 0) {
+        showToast('動画の出力には画像が少なくとも1枚必要です。', 'error');
+        return;
+      }
+      if (state.activeExportTab === 'audio' && state.audioClips.length === 0) {
+        showToast('音楽トラックに音楽が追加されていません。', 'error');
+        return;
+      }
+
       elements.exportProgressBox.classList.remove('hidden');
       elements.startExportBtn.disabled = true;
 
@@ -1445,7 +1630,8 @@
           await exportAudioOnly();
         }
       } catch (err) {
-        showToast('書き出し中にエラーが発生しました。', 'error');
+        console.error('Export Error:', err);
+        showToast('書き出しエラー: ' + (err.message || err), 'error');
       } finally {
         elements.exportProgressBox.classList.add('hidden');
         elements.startExportBtn.disabled = false;
@@ -1453,75 +1639,410 @@
       }
     });
 
-    // Pure JS NeuQuant + LZW GIF Encoder for reliable GIF exports
+    // 1. 画像アニメ書き出し（音声無視、画像のみ、本物のアニメーション画像フォーマット生成）
     async function exportAnimatedImage() {
       const format = elements.exportImgFormatSelect.value;
+      const quality = parseInt(elements.webpQualitySlider.value, 10) / 100;
+      
       const offCanvas = document.createElement('canvas');
       offCanvas.width = state.canvasWidth;
       offCanvas.height = state.canvasHeight;
       const ctx = offCanvas.getContext('2d');
 
-      if (format === 'webp') {
-        // Simple Animated WebP creation via Canvas Blob sequence or Canvas recorder
-        updateExportProgress(50, 'WebPアニメーションを作成中...');
-        const stream = offCanvas.captureStream(0);
-        const recorder = new MediaRecorder(stream, { mimeType: 'image/webp' });
-        const chunks = [];
-        recorder.ondataavailable = (e) => chunks.push(e.data);
-        recorder.start();
+      updateExportProgress(10, 'フレームを描画・準備中...');
 
-        for (const frame of state.frames) {
-          ctx.clearRect(0, 0, offCanvas.width, offCanvas.height);
-          if (!state.isTransparent) {
-            ctx.fillStyle = state.bgColor;
-            ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
-          }
+      // 各フレームの画像データを生成
+      const frameDataList = [];
+      for (let i = 0; i < state.frames.length; i++) {
+        const frame = state.frames[i];
+        ctx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+        
+        if (!state.isTransparent) {
+          ctx.fillStyle = state.bgColor;
+          ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+        }
+
+        if (frame.img) {
           const scale = Math.min(offCanvas.width / frame.img.width, offCanvas.height / frame.img.height);
           const w = frame.img.width * scale;
           const h = frame.img.height * scale;
           ctx.drawImage(frame.img, (offCanvas.width - w) / 2, (offCanvas.height - h) / 2, w, h);
-          stream.getVideoTracks()[0].requestFrame();
-          await new Promise(r => setTimeout(r, frame.duration * 1000));
         }
 
-        recorder.stop();
-        await new Promise(r => recorder.onstop = r);
-        const blob = new Blob(chunks, { type: 'image/webp' });
-        downloadBlob(blob, 'animation.webp');
-
-      } else {
-        // Fallback or APNG / GIF export via Canvas video recording
-        updateExportProgress(50, 'アニメーション画像を処理中...');
-        const stream = offCanvas.captureStream(0);
-        const mime = format === 'gif' ? 'image/gif' : 'image/png';
-        const recorder = new MediaRecorder(stream);
-        const chunks = [];
-        recorder.ondataavailable = (e) => chunks.push(e.data);
-        recorder.start();
-
-        for (const frame of state.frames) {
-          ctx.clearRect(0, 0, offCanvas.width, offCanvas.height);
-          if (!state.isTransparent) {
-            ctx.fillStyle = state.bgColor;
-            ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+        const durationMs = Math.max(10, Math.round(frame.duration * 1000));
+        
+        if (format === 'webp') {
+          const isLossless = document.querySelector('input[name="webpLossless"]:checked')?.value === 'lossless';
+          const qualityVal = isLossless ? 1.0 : quality;
+          const blob = await new Promise(resolve => offCanvas.toBlob(resolve, 'image/webp', qualityVal));
+          
+          if (!blob) throw new Error("画像データの生成に失敗しました。（Canvasのサイズ不正等）");
+          if (blob.type !== 'image/webp') {
+             throw new Error("ご利用のブラウザはWebPエンコードに非対応です。APNGまたはGIFをお試しください。");
           }
-          const scale = Math.min(offCanvas.width / frame.img.width, offCanvas.height / frame.img.height);
-          const w = frame.img.width * scale;
-          const h = frame.img.height * scale;
-          ctx.drawImage(frame.img, (offCanvas.width - w) / 2, (offCanvas.height - h) / 2, w, h);
-          stream.getVideoTracks()[0].requestFrame();
-          await new Promise(r => setTimeout(r, frame.duration * 1000));
+          
+          const buffer = await blob.arrayBuffer();
+          frameDataList.push({ buffer, durationMs });
+        } else if (format === 'apng') {
+          const blob = await new Promise(resolve => offCanvas.toBlob(resolve, 'image/png'));
+          const buffer = await blob.arrayBuffer();
+          frameDataList.push({ buffer, durationMs });
+        } else if (format === 'gif') {
+          const imageData = ctx.getImageData(0, 0, offCanvas.width, offCanvas.height);
+          frameDataList.push({ imageData, durationMs });
         }
 
-        recorder.stop();
-        await new Promise(r => recorder.onstop = r);
-        const blob = new Blob(chunks, { type: mime });
-        downloadBlob(blob, `animation.${format}`);
+        updateExportProgress(10 + Math.round(((i + 1) / state.frames.length) * 50), `${format.toUpperCase()}フレームエンコード中...`);
       }
 
+      updateExportProgress(70, `${format.toUpperCase()}バイナリ構造を合成中...`);
+
+      if (format === 'webp') {
+        const webpBlob = createAnimatedWebpBlob(frameDataList, state.canvasWidth, state.canvasHeight);
+        downloadBlob(webpBlob, 'animation.webp');
+      } else if (format === 'apng') {
+        const apngBlob = createApngBlob(frameDataList, state.canvasWidth, state.canvasHeight);
+        downloadBlob(apngBlob, 'animation.png');
+      } else if (format === 'gif') {
+        const gifBlob = createGifBlob(frameDataList, state.canvasWidth, state.canvasHeight);
+        downloadBlob(gifBlob, 'animation.gif');
+      }
+
+      updateExportProgress(100, '完了！');
       showToast('アニメーション画像を出力しました！', 'success');
     }
 
+    // Pure JS Animated WebP (RIFF ANIM/ANMF) Encoder
+    function createAnimatedWebpBlob(frames, width, height) {
+      const chunks = [];
+      let totalANMFSize = 0;
+
+      const preparedFrames = frames.map(f => {
+        const view = new DataView(f.buffer);
+        let vp8Chunk = null;
+        let offset = 12;
+
+        while (offset < view.byteLength - 8) {
+          const fourcc = String.fromCharCode(view.getUint8(offset), view.getUint8(offset+1), view.getUint8(offset+2), view.getUint8(offset+3));
+          const chunkSize = view.getUint32(offset + 4, true);
+          if (fourcc === 'VP8 ' || fourcc === 'VP8L') {
+            vp8Chunk = { fourcc, data: new Uint8Array(f.buffer, offset, 8 + chunkSize + (chunkSize % 2)) };
+            break;
+          }
+          offset += 8 + chunkSize + (chunkSize % 2);
+        }
+
+        if (!vp8Chunk) {
+          vp8Chunk = { fourcc: 'VP8 ', data: new Uint8Array(f.buffer, 12) };
+        }
+
+        const anmfHeaderLen = 24;
+        const anmfPayloadLen = 16 + vp8Chunk.data.length;
+        const pad = (anmfPayloadLen % 2);
+        const anmfChunkSize = anmfPayloadLen + pad;
+        totalANMFSize += 8 + anmfChunkSize;
+
+        return { vp8Chunk, durationMs: f.durationMs, pad, anmfChunkSize };
+      });
+
+      const vp8xSize = 18;
+      const animSize = 14;
+      const totalRiffSize = 4 + vp8xSize + animSize + totalANMFSize;
+
+      const headerBuffer = new ArrayBuffer(8 + totalRiffSize - totalANMFSize);
+      const hView = new DataView(headerBuffer);
+      let pos = 0;
+
+      function writeFourCC(str) {
+        for (let i = 0; i < 4; i++) hView.setUint8(pos++, str.charCodeAt(i));
+      }
+
+      writeFourCC('RIFF');
+      hView.setUint32(pos, totalRiffSize, true); pos += 4;
+      writeFourCC('WEBP');
+
+      writeFourCC('VP8X');
+      hView.setUint32(pos, 10, true); pos += 4;
+      hView.setUint8(pos, 0x02); pos += 1;
+      hView.setUint8(pos, 0); pos += 1;
+      hView.setUint8(pos, 0); pos += 1;
+      hView.setUint8(pos, 0); pos += 1;
+      hView.setUint32(pos, (width - 1) & 0xFFFFFF, true); pos += 3;
+      hView.setUint32(pos, (height - 1) & 0xFFFFFF, true); pos += 3;
+
+      writeFourCC('ANIM');
+      hView.setUint32(pos, 6, true); pos += 4;
+      hView.setUint32(pos, 0, true); pos += 4;
+      hView.setUint16(pos, 0, true); pos += 2;
+
+      chunks.push(headerBuffer);
+
+      for (const pf of preparedFrames) {
+        const frameBuf = new ArrayBuffer(24);
+        const fView = new DataView(frameBuf);
+        let fp = 0;
+
+        fView.setUint8(fp++, 'A'.charCodeAt(0));
+        fView.setUint8(fp++, 'N'.charCodeAt(0));
+        fView.setUint8(fp++, 'M'.charCodeAt(0));
+        fView.setUint8(fp++, 'F'.charCodeAt(0));
+        fView.setUint32(fp, pf.anmfChunkSize, true); fp += 4;
+
+        fView.setUint32(fp, 0, true); fp += 3;
+        fView.setUint32(fp, 0, true); fp += 3;
+        fView.setUint32(fp, (width - 1) & 0xFFFFFF, true); fp += 3;
+        fView.setUint32(fp, (height - 1) & 0xFFFFFF, true); fp += 3;
+
+        fView.setUint32(fp, pf.durationMs & 0xFFFFFF, true); fp += 3;
+        fView.setUint8(fp, 0x00); fp += 1;
+
+        chunks.push(frameBuf);
+        chunks.push(pf.vp8Chunk.data);
+
+        if (pf.pad > 0) {
+          chunks.push(new Uint8Array(1));
+        }
+      }
+
+      return new Blob(chunks, { type: 'image/webp' });
+    }
+
+    // Pure JS APNG (Animated PNG) Encoder
+    function createApngBlob(frames, width, height) {
+      const chunks = [];
+      let seq = 0;
+
+      const firstPngView = new DataView(frames[0].buffer);
+      chunks.push(new Uint8Array(frames[0].buffer, 0, 8));
+
+      let pos = 8;
+      while (pos < firstPngView.byteLength) {
+        const length = firstPngView.getUint32(pos);
+        const type = String.fromCharCode(
+          firstPngView.getUint8(pos+4), firstPngView.getUint8(pos+5),
+          firstPngView.getUint8(pos+6), firstPngView.getUint8(pos+7)
+        );
+
+        if (type === 'IHDR') {
+          chunks.push(new Uint8Array(frames[0].buffer, pos, 12 + length));
+
+          const actlBuf = new ArrayBuffer(20);
+          const actlView = new DataView(actlBuf);
+          let p = 0;
+          actlView.setUint32(p, 8); p += 4;
+          actlView.setUint8(p++, 'a'.charCodeAt(0));
+          actlView.setUint8(p++, 'c'.charCodeAt(0));
+          actlView.setUint8(p++, 'T'.charCodeAt(0));
+          actlView.setUint8(p++, 'L'.charCodeAt(0));
+          actlView.setUint32(p, frames.length); p += 4;
+          actlView.setUint32(p, 0); p += 4;
+          actlView.setUint32(p, calcCrc32(new Uint8Array(actlBuf, 4, 12)));
+          chunks.push(actlBuf);
+          break;
+        }
+        pos += 12 + length;
+      }
+
+      for (let i = 0; i < frames.length; i++) {
+        const fView = new DataView(frames[i].buffer);
+        let fPos = 8;
+        const idatList = [];
+
+        while (fPos < fView.byteLength) {
+          const length = fView.getUint32(fPos);
+          const type = String.fromCharCode(
+            fView.getUint8(fPos+4), fView.getUint8(fPos+5),
+            fView.getUint8(fPos+6), fView.getUint8(fPos+7)
+          );
+
+          if (type === 'IDAT') {
+            idatList.push(new Uint8Array(frames[i].buffer, fPos + 8, length));
+          }
+          fPos += 12 + length;
+        }
+
+        const fctlBuf = new ArrayBuffer(38);
+        const fctlView = new DataView(fctlBuf);
+        let fp = 0;
+        fctlView.setUint32(fp, 26); fp += 4;
+        fctlView.setUint8(fp++, 'f'.charCodeAt(0));
+        fctlView.setUint8(fp++, 'c'.charCodeAt(0));
+        fctlView.setUint8(fp++, 'T'.charCodeAt(0));
+        fctlView.setUint8(fp++, 'L'.charCodeAt(0));
+        fctlView.setUint32(fp, seq++); fp += 4;
+        fctlView.setUint32(fp, width); fp += 4;
+        fctlView.setUint32(fp, height); fp += 4;
+        fctlView.setUint32(fp, 0); fp += 4;
+        fctlView.setUint32(fp, 0); fp += 4;
+        fctlView.setUint16(fp, frames[i].durationMs); fp += 2;
+        fctlView.setUint16(fp, 1000); fp += 2;
+        fctlView.setUint8(fp++, 0);
+        fctlView.setUint8(fp++, 0);
+        fctlView.setUint32(fp, calcCrc32(new Uint8Array(fctlBuf, 4, 30)));
+        chunks.push(fctlBuf);
+
+        for (const idatData of idatList) {
+          if (i === 0) {
+            const idatBuf = new ArrayBuffer(12 + idatData.length);
+            const iv = new DataView(idatBuf);
+            iv.setUint32(0, idatData.length);
+            iv.setUint8(4, 'I'.charCodeAt(0)); iv.setUint8(5, 'D'.charCodeAt(0));
+            iv.setUint8(6, 'A'.charCodeAt(0)); iv.setUint8(7, 'T'.charCodeAt(0));
+            new Uint8Array(idatBuf, 8, idatData.length).set(idatData);
+            iv.setUint32(8 + idatData.length, calcCrc32(new Uint8Array(idatBuf, 4, 4 + idatData.length)));
+            chunks.push(idatBuf);
+          } else {
+            const fdatBuf = new ArrayBuffer(16 + idatData.length);
+            const fv = new DataView(fdatBuf);
+            fv.setUint32(0, 4 + idatData.length);
+            fv.setUint8(4, 'f'.charCodeAt(0)); fv.setUint8(5, 'd'.charCodeAt(0));
+            fv.setUint8(6, 'A'.charCodeAt(0)); fv.setUint8(7, 'T'.charCodeAt(0));
+            fv.setUint32(8, seq++);
+            new Uint8Array(fdatBuf, 12, idatData.length).set(idatData);
+            fv.setUint32(12 + idatData.length, calcCrc32(new Uint8Array(fdatBuf, 4, 8 + idatData.length)));
+            chunks.push(fdatBuf);
+          }
+        }
+      }
+
+      const iendBuf = new ArrayBuffer(12);
+      const ieView = new DataView(iendBuf);
+      ieView.setUint32(0, 0);
+      ieView.setUint8(4, 'I'.charCodeAt(0)); ieView.setUint8(5, 'E'.charCodeAt(0));
+      ieView.setUint8(6, 'N'.charCodeAt(0)); ieView.setUint8(7, 'D'.charCodeAt(0));
+      ieView.setUint32(8, calcCrc32(new Uint8Array(iendBuf, 4, 4)));
+      chunks.push(iendBuf);
+
+      return new Blob(chunks, { type: 'image/png' });
+    }
+
+    const crcTable = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+      crcTable[n] = c;
+    }
+    function calcCrc32(buf) {
+      let crc = 0xFFFFFFFF;
+      for (let i = 0; i < buf.length; i++) crc = crcTable[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+      return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    // Pure JS Animated GIF Encoder
+    function createGifBlob(frames, width, height) {
+      const parts = [];
+      parts.push(new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])); // GIF89a
+      parts.push(new Uint8Array([width & 0xFF, (width >> 8) & 0xFF, height & 0xFF, (height >> 8) & 0xFF, 0x70, 0, 0]));
+
+      parts.push(new Uint8Array([0x21, 0xFF, 0x0B, 0x4E, 0x45, 0x54, 0x53, 0x43, 0x41, 0x50, 0x45, 0x32, 0x2E, 0x30, 0x03, 0x01, 0x00, 0x00, 0x00]));
+
+      for (const frame of frames) {
+        const delay = Math.max(2, Math.round(frame.durationMs / 10));
+        parts.push(new Uint8Array([0x21, 0xF9, 0x04, 0x04, delay & 0xFF, (delay >> 8) & 0xFF, 0, 0]));
+
+        parts.push(new Uint8Array([0x2C, 0, 0, 0, 0, width & 0xFF, (width >> 8) & 0xFF, height & 0xFF, (height >> 8) & 0xFF, 0x87]));
+
+        // RGB332 フルカラー256色パレット生成（グレースケールを解消）
+        const pal = new Uint8Array(256 * 3);
+        for (let i = 0; i < 256; i++) {
+          const r = Math.round(((i >> 5) & 0x07) * (255 / 7));
+          const g = Math.round(((i >> 2) & 0x07) * (255 / 7));
+          const b = Math.round((i & 0x03) * (255 / 3));
+          pal[i*3] = r; pal[i*3+1] = g; pal[i*3+2] = b;
+        }
+        parts.push(pal);
+
+        const imgData = frame.imageData.data;
+        const pixels = new Uint8Array(width * height);
+        for (let i = 0; i < pixels.length; i++) {
+          const r = imgData[i * 4];
+          const g = imgData[i * 4 + 1];
+          const b = imgData[i * 4 + 2];
+          const rIdx = Math.round((r / 255) * 7);
+          const gIdx = Math.round((g / 255) * 7);
+          const bIdx = Math.round((b / 255) * 3);
+          pixels[i] = (rIdx << 5) | (gIdx << 2) | bIdx;
+        }
+
+        parts.push(new Uint8Array([8])); // LZW min code size
+        parts.push(encodeLzwGif(pixels, 8));
+        parts.push(new Uint8Array([0]));
+      }
+
+      parts.push(new Uint8Array([0x3B])); // GIF Trailer
+      return new Blob(parts, { type: 'image/gif' });
+    }
+
+    function encodeLzwGif(pixels, minCodeSize) {
+      const clearCode = 1 << minCodeSize;
+      const eofCode = clearCode + 1;
+      let codeSize = minCodeSize + 1;
+      let nextCode = eofCode + 1;
+
+      const subBlocks = [];
+      let curBlock = [];
+      let bitBuf = 0;
+      let bitCount = 0;
+
+      function writeBits(val, bits) {
+        bitBuf |= (val << bitCount);
+        bitCount += bits;
+        while (bitCount >= 8) {
+          curBlock.push(bitBuf & 0xFF);
+          if (curBlock.length === 255) {
+            subBlocks.push(255, ...curBlock);
+            curBlock = [];
+          }
+          bitBuf >>= 8;
+          bitCount -= 8;
+        }
+      }
+
+      writeBits(clearCode, codeSize);
+
+      let dictionary = new Map();
+      let prefix = "";
+
+      for (let i = 0; i < pixels.length; i++) {
+        const k = String.fromCharCode(pixels[i]);
+        const pk = prefix + k;
+
+        if (dictionary.has(pk)) {
+          prefix = pk;
+        } else {
+          writeBits(prefix.length === 1 ? prefix.charCodeAt(0) : dictionary.get(prefix), codeSize);
+
+          if (nextCode < 4096) {
+            dictionary.set(pk, nextCode++);
+            if (nextCode === (1 << codeSize) + 1 && codeSize < 12) {
+              codeSize++;
+            }
+          } else {
+            writeBits(clearCode, codeSize);
+            dictionary.clear();
+            codeSize = minCodeSize + 1;
+            nextCode = eofCode + 1;
+          }
+          prefix = k;
+        }
+      }
+
+      if (prefix.length > 0) {
+        writeBits(prefix.length === 1 ? prefix.charCodeAt(0) : dictionary.get(prefix), codeSize);
+      }
+      writeBits(eofCode, codeSize);
+
+      if (bitCount > 0) {
+        curBlock.push(bitBuf & 0xFF);
+      }
+      if (curBlock.length > 0) {
+        subBlocks.push(curBlock.length, ...curBlock);
+      }
+
+      return new Uint8Array(subBlocks);
+    }
+
+    // 2. 動画書き出し（画像と音楽の両方のタイムラインを使用）
     async function exportVideo() {
       const format = elements.exportVideoFormatSelect.value;
       const fps = parseInt(elements.exportVideoFpsSelect.value, 10);
@@ -1532,24 +2053,72 @@
       offCanvas.height = state.canvasHeight;
       const ctx = offCanvas.getContext('2d');
 
-      const stream = offCanvas.captureStream(fps);
+      // MP4指定時: WebCodecs + mp4-muxer による直接H.264 MP4生成を試行
+      if (format === 'mp4') {
+        const mp4Success = await exportMp4Video(offCanvas, ctx, fps, bitrate);
+        if (mp4Success) return;
+      }
+
+      // フォールバック用のストリーム取得（ブラウザ互換性の安全ガード）
+      const stream = offCanvas.captureStream ? offCanvas.captureStream(fps) : (offCanvas.mozCaptureStream ? offCanvas.mozCaptureStream(fps) : null);
+      if (!stream) {
+        throw new Error("ご利用のブラウザは動画の録画機能 (captureStream) に非対応です。");
+      }
       const audioDestination = getAudioContext().createMediaStreamDestination();
 
-      // Mix audio clips or generate silent audio
       playAudioClipsForExport(audioDestination);
       if (audioDestination.stream.getAudioTracks().length > 0) {
         stream.addTrack(audioDestination.stream.getAudioTracks()[0]);
       }
 
-      let mimeType = format === 'mp4' ? 'video/mp4' : 'video/webm';
-      if (!MediaRecorder.isTypeSupported(mimeType)) {
-        mimeType = 'video/webm';
+      let mimeType = '';
+      let candidates = [];
+
+      if (format === 'mp4') {
+        candidates = [
+          'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+          'video/mp4;codecs=avc1',
+          'video/mp4'
+        ];
+      } else {
+        candidates = [
+          'video/webm;codecs=vp9,opus',
+          'video/webm;codecs=vp8,opus',
+          'video/webm;codecs=vp9',
+          'video/webm;codecs=vp8',
+          'video/webm'
+        ];
       }
 
-      const recorder = new MediaRecorder(stream, {
-        mimeType: mimeType,
-        videoBitsPerSecond: bitrate
-      });
+      for (const cand of candidates) {
+        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(cand)) {
+          mimeType = cand;
+          break;
+        }
+      }
+
+      // MP4指定でMediaRecorderも未対応の場合はWebMに安全フォールバック
+      let fallbackToWebm = false;
+      if (!mimeType) {
+        if (format === 'mp4') {
+          fallbackToWebm = true;
+          mimeType = 'video/webm';
+        } else {
+          mimeType = 'video/webm';
+        }
+      }
+
+      let recorder;
+      try {
+        const recorderOptions = mimeType ? { mimeType, videoBitsPerSecond: bitrate } : { videoBitsPerSecond: bitrate };
+        recorder = new MediaRecorder(stream, recorderOptions);
+      } catch (e) {
+        try {
+          recorder = new MediaRecorder(stream, { videoBitsPerSecond: bitrate });
+        } catch (err) {
+          throw new Error("ブラウザがMediaRecorderに非対応か、指定されたコーデックをサポートしていません。");
+        }
+      }
 
       const chunks = [];
       recorder.ondataavailable = (e) => chunks.push(e.data);
@@ -1561,10 +2130,9 @@
 
       while (elapsedMs < totalTime * 1000) {
         const sec = elapsedMs / 1000;
-        
-        // Find current frame
         let frameElapsed = 0;
         let curFrame = state.frames[0];
+
         for (const f of state.frames) {
           if (sec >= frameElapsed && sec < frameElapsed + f.duration) {
             curFrame = f;
@@ -1578,6 +2146,7 @@
           ctx.fillStyle = state.bgColor;
           ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
         }
+
         if (curFrame && curFrame.img) {
           const scale = Math.min(offCanvas.width / curFrame.img.width, offCanvas.height / curFrame.img.height);
           const w = curFrame.img.width * scale;
@@ -1585,7 +2154,10 @@
           ctx.drawImage(curFrame.img, (offCanvas.width - w) / 2, (offCanvas.height - h) / 2, w, h);
         }
 
-        stream.getVideoTracks()[0].requestFrame();
+        if (stream.getVideoTracks()[0].requestFrame) {
+          stream.getVideoTracks()[0].requestFrame();
+        }
+
         updateExportProgress(Math.round((elapsedMs / (totalTime * 1000)) * 100), '動画をエンコード中...');
         await new Promise(r => setTimeout(r, stepMs));
         elapsedMs += stepMs;
@@ -1594,29 +2166,128 @@
       recorder.stop();
       await new Promise(r => recorder.onstop = r);
 
-      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
-      const blob = new Blob(chunks, { type: mimeType });
-      downloadBlob(blob, `movie.${ext}`);
-      showToast('動画を出力しました！', 'success');
+      const usedMime = recorder.mimeType || mimeType;
+      const actualExt = usedMime.includes('mp4') ? 'mp4' : 'webm';
+      const blob = new Blob(chunks, { type: usedMime || (format === 'mp4' ? 'video/mp4' : 'video/webm') });
+      downloadBlob(blob, `movie.${actualExt}`);
+
+      if (fallbackToWebm) {
+        showToast('ご使用のブラウザがMP4保存に非対応のためWebMで出力しました。', 'info');
+      } else {
+        showToast('動画を出力しました！', 'success');
+      }
     }
 
+    // WebCodecs + mp4-muxer による本物の H.264 MP4 動画エンコーダー
+    async function exportMp4Video(offCanvas, ctx, fps, bitrate) {
+      if (typeof VideoEncoder !== 'undefined' && typeof Mp4Muxer !== 'undefined') {
+        try {
+          const totalTime = state.totalDuration;
+          const totalFrames = Math.ceil(totalTime * fps);
+          const frameDurationMicro = Math.round(1000000 / fps);
+
+          const muxer = new Mp4Muxer.Muxer({
+            target: new Mp4Muxer.ArrayBufferTarget(),
+            video: {
+              codec: 'avc',
+              width: state.canvasWidth,
+              height: state.canvasHeight
+            },
+            fastStart: 'in-memory'
+          });
+
+          const videoEncoder = new VideoEncoder({
+            output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
+            error: (e) => console.error('VideoEncoder Error:', e)
+          });
+
+          videoEncoder.configure({
+            codec: 'avc1.42E01E', // H.264 Baseline Profile
+            width: state.canvasWidth,
+            height: state.canvasHeight,
+            bitrate: bitrate,
+            framerate: fps
+          });
+
+          for (let i = 0; i < totalFrames; i++) {
+            const sec = i / fps;
+            let frameElapsed = 0;
+            let curFrame = state.frames[0];
+
+            for (const f of state.frames) {
+              if (sec >= frameElapsed && sec < frameElapsed + f.duration) {
+                curFrame = f;
+                break;
+              }
+              frameElapsed += f.duration;
+            }
+
+            ctx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+            if (!state.isTransparent) {
+              ctx.fillStyle = state.bgColor;
+              ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+            }
+
+            if (curFrame && curFrame.img) {
+              const scale = Math.min(offCanvas.width / curFrame.img.width, offCanvas.height / curFrame.img.height);
+              const w = curFrame.img.width * scale;
+              const h = frame.img ? frame.img.height * scale : 0;
+              ctx.drawImage(curFrame.img, (offCanvas.width - w) / 2, (offCanvas.height - h) / 2, w, h);
+            }
+
+            const timestampMicro = Math.round(i * frameDurationMicro);
+            const vFrame = new VideoFrame(offCanvas, { timestamp: timestampMicro });
+            const isKeyFrame = (i % (fps * 2) === 0);
+            videoEncoder.encode(vFrame, { keyFrame: isKeyFrame });
+            vFrame.close();
+
+            updateExportProgress(Math.round((i / totalFrames) * 100), 'MP4(H.264)動画をエンコード中...');
+            if (i % 10 === 0) await new Promise(r => setTimeout(r, 0));
+          }
+
+          await videoEncoder.flush();
+          muxer.finalize();
+
+          const blob = new Blob([muxer.target.buffer], { type: 'video/mp4' });
+          downloadBlob(blob, 'movie.mp4');
+          showToast('MP4動画を出力しました！', 'success');
+          return true;
+        } catch (err) {
+          console.warn('WebCodecs MP4 export failed, falling back to MediaRecorder:', err);
+          return false;
+        }
+      }
+      return false;
+    }
+
+    // 3. 音楽のみ書き出し（画像無視、音楽のタイムラインのみを使用）
     async function exportAudioOnly() {
       const format = elements.exportAudioFormatSelect.value;
       const bitrate = parseInt(elements.exportAudioBitrateSelect.value, 10);
-      const audioCtx = getAudioContext();
 
-      const offlineCtx = new OfflineAudioContext(2, Math.max(1, Math.ceil(state.totalDuration * 44100)), 44100);
+      const audioTotalDuration = state.audioClips.reduce((sum, a) => sum + a.duration, 0);
+      if (audioTotalDuration <= 0) {
+        showToast('音楽トラックに有効なクリップがありません。', 'error');
+        return;
+      }
 
-      if (state.audioClips.length > 0) {
-        for (const clip of state.audioClips) {
-          const source = offlineCtx.createBufferSource();
-          source.buffer = clip.buffer;
-          const gainNode = offlineCtx.createGain();
-          gainNode.gain.value = state.volume;
-          source.connect(gainNode);
-          gainNode.connect(offlineCtx.destination);
-          source.start(0, clip.startTime, clip.duration);
-        }
+      const OfflineCtxClass = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+      if (!OfflineCtxClass) {
+        throw new Error("ご利用のブラウザは音声エンコード (OfflineAudioContext) に対応していません。");
+      }
+      const offlineCtx = new OfflineCtxClass(2, Math.max(1, Math.ceil(audioTotalDuration * 44100)), 44100);
+
+      let currentAudioTime = 0;
+      for (const clip of state.audioClips) {
+        const source = offlineCtx.createBufferSource();
+        source.buffer = clip.buffer;
+        const gainNode = offlineCtx.createGain();
+        gainNode.gain.value = state.volume;
+        source.connect(gainNode);
+        gainNode.connect(offlineCtx.destination);
+
+        source.start(currentAudioTime, clip.startTime, clip.duration);
+        currentAudioTime += clip.duration;
       }
 
       updateExportProgress(50, '音声をレンダリング中...');
@@ -1624,25 +2295,33 @@
 
       if (format === 'mp3' && typeof lamejs !== 'undefined') {
         const mp3encoder = new lamejs.Mp3Encoder(2, 44100, bitrate);
-        const left = new Int16Array(renderedBuffer.length);
-        const right = new Int16Array(renderedBuffer.length);
+        const mp3Data = [];
         
         const floatL = renderedBuffer.getChannelData(0);
         const floatR = renderedBuffer.getChannelData(1);
+        const sampleBlockSize = 1152;
 
-        for (let i = 0; i < renderedBuffer.length; i++) {
-          left[i] = Math.max(-32768, Math.min(32767, floatL[i] * 32767));
-          right[i] = Math.max(-32768, Math.min(32767, floatR[i] * 32767));
+        for (let i = 0; i < renderedBuffer.length; i += sampleBlockSize) {
+          const leftChunk = new Int16Array(sampleBlockSize);
+          const rightChunk = new Int16Array(sampleBlockSize);
+
+          for (let j = 0; j < sampleBlockSize && (i + j) < renderedBuffer.length; j++) {
+            leftChunk[j] = Math.max(-32768, Math.min(32767, floatL[i + j] * 32767));
+            rightChunk[j] = Math.max(-32768, Math.min(32767, floatR[i + j] * 32767));
+          }
+
+          const mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
+          if (mp3buf.length > 0) mp3Data.push(mp3buf);
         }
 
-        const mp3buf = mp3encoder.encodeBuffer(left, right);
         const endbuf = mp3encoder.flush();
-        const blob = new Blob([mp3buf, endbuf], { type: 'audio/mp3' });
+        if (endbuf.length > 0) mp3Data.push(endbuf);
+
+        const blob = new Blob(mp3Data, { type: 'audio/mp3' });
         downloadBlob(blob, 'audio.mp3');
       } else {
-        // WAV export
         const wavBlob = bufferToWaveBlob(renderedBuffer);
-        downloadBlob(wavBlob, `audio.${format === 'ogg' ? 'ogg' : 'wav'}`);
+        downloadBlob(wavBlob, 'audio.wav');
       }
 
       showToast('音声を出力しました！', 'success');
@@ -1714,7 +2393,6 @@
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
-    // App Initialization
     window.addEventListener('DOMContentLoaded', () => {
       commitStateChange();
       renderTimeline();
