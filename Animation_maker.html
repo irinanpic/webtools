@@ -3,19 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>アニメーション画像メーカー (GIF / APNG / WebP)</title>
+  <title>アニメーション画像メーカー</title>
 
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  
-  <!-- APNG Encoder Dependencies (Pako + UPNG.js) -->
-  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.js"></script>
+  <!-- LameJS for MP3 Encoding -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 
   <style>
-    /* Custom Scrollbar */
     ::-webkit-scrollbar {
       width: 8px;
       height: 8px;
@@ -32,7 +29,7 @@
       background: #475569;
     }
 
-    /* Grid pattern for transparent canvas preview */
+    /* 透過プレビュー背景パターン */
     .bg-checker {
       background-color: #1e293b;
       background-image: 
@@ -44,1811 +41,1685 @@
       background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
     }
 
-    /* Custom color input */
+    /* カラー入力のカスタムスタイル */
     input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
     input[type="color"]::-webkit-color-swatch { border: none; border-radius: 6px; }
 
-    /* Timeline dragging ghost effect */
-    .dragging {
-      opacity: 0.4;
-      transform: scale(0.96);
+    /* トラックカードのリサイズハンドル */
+    .resize-handle-r {
+      position: absolute;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      width: 10px;
+      cursor: col-resize;
+      background: rgba(99, 102, 241, 0.4);
+      border-top-right-radius: 0.5rem;
+      border-bottom-right-radius: 0.5rem;
+      transition: background 0.15s;
+    }
+    .resize-handle-r:hover, .resize-handle-r.active {
+      background: rgba(129, 140, 248, 0.9);
     }
   </style>
 </head>
 <body class="h-full flex flex-col font-sans antialiased select-none bg-slate-900 text-slate-100 overflow-hidden">
 
-  <!-- Navigation Header -->
-  <header class="h-14 bg-slate-800/90 border-b border-slate-700/80 px-4 flex items-center justify-between shrink-0 shadow-md backdrop-blur z-20">
+  <!-- Header -->
+  <header class="bg-slate-800/90 border-b border-slate-700/80 px-4 py-2.5 flex items-center justify-between shrink-0 shadow-md backdrop-blur z-20">
     <div class="flex items-center space-x-3">
       <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
         <i class="fa-solid fa-film text-lg"></i>
       </div>
       <div>
         <h1 class="text-base font-bold tracking-tight text-white leading-none">アニメーション画像メーカー</h1>
-        <p class="text-xs text-slate-400 mt-1">パラパラ漫画風アニメ作成 (GIF / APNG / Animated WebP)</p>
+        <p class="text-[11px] text-slate-400 mt-1">画像・音楽マルチトラックタイムライン ＆ WebP / APNG / GIF / 動画書き出し</p>
       </div>
     </div>
 
-    <!-- Action Header Buttons -->
+    <!-- Action Buttons -->
     <div class="flex items-center space-x-2">
-      <button id="clearAllBtn" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg transition border border-slate-600 flex items-center space-x-1.5">
-        <i class="fa-solid fa-trash-can text-slate-400"></i>
+      <!-- Undo / Redo -->
+      <div class="flex items-center bg-slate-900/60 p-1 rounded-lg border border-slate-700/60 mr-1">
+        <button id="undoBtn" title="元に戻す (Ctrl+Z)" class="px-2.5 py-1 text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 text-xs font-medium rounded transition flex items-center space-x-1" disabled>
+          <i class="fa-solid fa-rotate-left"></i>
+          <span>戻る</span>
+        </button>
+        <div class="h-4 w-px bg-slate-700 mx-1"></div>
+        <button id="redoBtn" title="やり直す (Ctrl+Y)" class="px-2.5 py-1 text-slate-400 hover:text-white disabled:opacity-30 disabled:hover:text-slate-400 text-xs font-medium rounded transition flex items-center space-x-1" disabled>
+          <i class="fa-solid fa-rotate-right"></i>
+          <span>進む</span>
+        </button>
+      </div>
+
+      <input type="file" id="fileInputImages" accept="image/*" multiple class="hidden">
+      <input type="file" id="fileInputAudio" accept="audio/*" multiple class="hidden">
+
+      <button id="addImagesBtn" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg transition border border-slate-600 flex items-center space-x-1.5">
+        <i class="fa-solid fa-image text-indigo-400"></i>
+        <span>画像追加</span>
+      </button>
+
+      <button id="addAudioBtn" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg transition border border-slate-600 flex items-center space-x-1.5">
+        <i class="fa-solid fa-music text-emerald-400"></i>
+        <span>音楽追加</span>
+      </button>
+
+      <button id="clearAllBtn" class="px-3 py-1.5 bg-rose-900/40 hover:bg-rose-800/60 text-rose-300 border border-rose-700/60 text-xs font-medium rounded-lg transition flex items-center space-x-1.5">
+        <i class="fa-solid fa-trash-can"></i>
         <span>全クリア</span>
       </button>
 
-      <label class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-indigo-600/20 cursor-pointer transition flex items-center space-x-1.5">
-        <i class="fa-solid fa-plus"></i>
-        <span>画像を追加</span>
-        <input type="file" id="imageInput" multiple accept="image/*" class="hidden">
-      </label>
+      <div class="h-4 w-px bg-slate-700 mx-1"></div>
 
-      <button id="exportModalBtn" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-emerald-600/20 transition flex items-center space-x-1.5">
+      <button id="openExportModalBtn" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-indigo-600/20 transition flex items-center space-x-1.5">
         <i class="fa-solid fa-download"></i>
-        <span>アニメーションを書き出し</span>
+        <span>ファイル保存...</span>
       </button>
     </div>
   </header>
 
-  <!-- Main Editor Workspace -->
-  <main class="flex-1 flex overflow-hidden">
+  <!-- Main Application Body -->
+  <main class="flex-1 flex overflow-hidden relative">
 
-    <!-- Left Panel: Asset & Canvas Settings -->
-    <aside class="w-72 bg-slate-800/90 border-r border-slate-700/80 flex flex-col shrink-0 z-10">
-      <div class="p-3 border-b border-slate-700/80 font-bold text-xs text-slate-300 uppercase tracking-wider flex items-center">
-        <i class="fa-solid fa-sliders text-indigo-400 mr-2"></i>
-        <span>キャンバス・描画設定</span>
-      </div>
+    <!-- Left Sidebar: Controls & Inspector -->
+    <aside class="w-80 bg-slate-800/90 border-r border-slate-700/80 p-3.5 flex flex-col space-y-3.5 overflow-y-auto shrink-0 z-10">
+      
+      <!-- Canvas Settings -->
+      <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-3">
+        <div class="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center">
+          <i class="fa-solid fa-sliders mr-1.5 text-indigo-400"></i>
+          <span>キャンバス設定</span>
+        </div>
 
-      <div class="p-4 space-y-4 text-xs overflow-y-auto flex-1">
-        <!-- Canvas Size / Aspect Ratio Preset -->
-        <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-2">
-          <label class="block text-slate-300 font-medium">アスペクト比 / 解像度</label>
-          <select id="aspectRatioSelect" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500">
-            <option value="auto">1枚目の画像に合わせる (Auto)</option>
-            <option value="1:1">1:1 (正方形 - 800x800)</option>
-            <option value="16:9">16:9 (ワイド - 1280x720)</option>
-            <option value="4:3">4:3 (標準 - 800x600)</option>
-            <option value="custom">カスタムサイズ</option>
+        <!-- Canvas Resolution Presets -->
+        <div class="space-y-1">
+          <label class="text-slate-400 block text-[11px]">プリセット解像度</label>
+          <select id="resPresetSelect" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-1.5 text-slate-200 focus:outline-none focus:border-indigo-500 text-xs">
+            <option value="custom">カスタム</option>
+            <option value="fitFirst">★ 最初の画像に合わせる</option>
+            <option value="640x480" selected>640 x 480 (4:3)</option>
+            <option value="1280x720">1280 x 720 (HD 16:9)</option>
+            <option value="1920x1080">1920 x 1080 (FHD 16:9)</option>
+            <option value="500x500">500 x 500 (1:1 正方形)</option>
+            <option value="1080x1920">1080 x 1920 (縦型 9:16)</option>
           </select>
         </div>
 
-        <!-- Custom Dimension Inputs -->
-        <div id="customDimensionBox" class="grid grid-cols-2 gap-2 hidden">
-          <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/60">
-            <label class="block text-[10px] text-slate-400 mb-0.5">幅 (px)</label>
-            <input type="number" id="customWidthInput" value="800" min="50" max="3840" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs">
+        <!-- Custom Width/Height -->
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="text-slate-400 block text-[10px] mb-0.5">幅 (px)</label>
+            <input type="number" id="canvasWidthInput" value="640" min="50" max="3840" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-indigo-500">
           </div>
-          <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/60">
-            <label class="block text-[10px] text-slate-400 mb-0.5">高さ (px)</label>
-            <input type="number" id="customHeightInput" value="600" min="50" max="3840" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs">
+          <div>
+            <label class="text-slate-400 block text-[10px] mb-0.5">高さ (px)</label>
+            <input type="number" id="canvasHeightInput" value="480" min="50" max="3840" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-indigo-500">
           </div>
         </div>
 
-        <!-- Fit Mode -->
-        <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-2">
-          <label class="block text-slate-300 font-medium">画像の配置（フィット方式）</label>
-          <select id="fitModeSelect" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500">
-            <option value="contain">全体を収める (Contain - 余白あり)</option>
-            <option value="cover">枠いっぱいに拡大 (Cover - はみ出し切抜き)</option>
-            <option value="stretch">変形して引き伸ばす (Stretch)</option>
-          </select>
-        </div>
-
-        <!-- Background Color -->
-        <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-2">
-          <label class="block text-slate-300 font-medium">背景色</label>
+        <!-- Canvas Background Color -->
+        <div class="space-y-1">
+          <label class="text-slate-400 block text-[11px]">キャンバス背景色</label>
           <div class="flex items-center space-x-2">
-            <input type="color" id="bgColorInput" value="#000000" class="w-8 h-8 rounded border border-slate-700 bg-transparent cursor-pointer">
-            <input type="text" id="bgColorTextInput" value="#000000" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs uppercase">
-            <button id="bgTransparentBtn" class="px-2.5 py-1.5 bg-slate-700 border border-slate-600 rounded-lg text-[10px] text-slate-200 hover:bg-slate-600 transition">透過</button>
-          </div>
-        </div>
-
-        <!-- Frame Summary Stats -->
-        <div class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-700/60 space-y-2">
-          <div class="flex justify-between text-[11px]">
-            <span class="text-slate-400">総フレーム数:</span>
-            <span id="statTotalFrames" class="font-mono text-white font-bold">0 枚</span>
-          </div>
-          <div class="flex justify-between text-[11px]">
-            <span class="text-slate-400">総再生時間:</span>
-            <span id="statTotalDuration" class="font-mono text-indigo-400 font-bold">0.0 秒</span>
-          </div>
-          <div class="flex justify-between text-[11px]">
-            <span class="text-slate-400">出力キャンバス:</span>
-            <span id="statCanvasResolution" class="font-mono text-slate-300">0 x 0 px</span>
+            <input type="color" id="bgColorPicker" value="#0f172a" class="w-7 h-7 bg-transparent cursor-pointer rounded border border-slate-600 shrink-0">
+            <input type="text" id="bgColorTextInput" value="#0f172a" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 font-mono text-xs focus:outline-none focus:border-indigo-500">
+            <button id="bgTransparentBtn" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 rounded-lg transition shrink-0">
+              透過
+            </button>
           </div>
         </div>
       </div>
+
+      <!-- Item Inspector -->
+      <div id="inspectorPanel" class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-3">
+        <div class="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center justify-between">
+          <span class="flex items-center"><i class="fa-solid fa-circle-info mr-1.5 text-indigo-400"></i> アイテム詳細プロパティ</span>
+        </div>
+
+        <div id="inspectorContent" class="text-xs text-slate-400 italic">
+          タイムラインの画像または音楽を選択すると詳細が編集できます。
+        </div>
+      </div>
+
     </aside>
 
-    <!-- Center Panel: Continuous Live Canvas Preview -->
-    <section class="flex-1 bg-slate-950 flex flex-col relative overflow-hidden">
-      <!-- Preview Header Toolbar -->
-      <div class="h-10 border-b border-slate-700/80 bg-slate-800/80 px-4 flex items-center justify-between text-xs text-slate-400">
-        <span class="flex items-center space-x-2">
-          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-          <span class="font-semibold text-slate-200">リアルタイムプレビュー</span>
-        </span>
+    <!-- Right Center Workspace: Canvas Preview & Timeline -->
+    <div class="flex-1 flex flex-col overflow-hidden relative bg-slate-950">
 
-        <div class="flex items-center space-x-4">
-          <span id="playbackCounter" class="font-mono text-indigo-400 font-bold text-xs">Frame 0 / 0</span>
-        </div>
-      </div>
-
-      <!-- Canvas Viewport -->
-      <div id="canvasContainer" class="flex-1 flex items-center justify-center p-6 overflow-hidden relative bg-checker">
-        <!-- Canvas Element -->
-        <canvas id="previewCanvas" class="max-w-full max-h-full rounded-lg shadow-2xl border border-slate-700/80 transition-all object-contain"></canvas>
-
-        <!-- Empty Dropzone Overlay when no frames -->
-        <div id="emptyDropzone" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/90 p-6 text-center cursor-pointer">
-          <div class="w-16 h-16 rounded-full bg-slate-800 border border-slate-700 text-indigo-400 flex items-center justify-center mb-4 text-2xl shadow-lg">
+      <!-- Top Preview Canvas Container -->
+      <section id="workspace" class="flex-1 relative flex flex-col items-center justify-center p-4 overflow-hidden select-none bg-slate-950">
+        
+        <!-- Drag & Drop Dropzone when empty -->
+        <div id="dropzone" class="m-auto max-w-md w-full border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all bg-slate-900/40 hover:bg-slate-800/80 group">
+          <div class="w-14 h-14 rounded-full bg-slate-800 group-hover:bg-indigo-600/20 text-slate-400 group-hover:text-indigo-400 flex items-center justify-center text-2xl transition-all mb-3">
             <i class="fa-solid fa-cloud-arrow-up"></i>
           </div>
-          <h3 class="text-base font-bold text-slate-200 mb-1">画像をドラッグ＆ドロップ</h3>
-          <p class="text-xs text-slate-400 max-w-sm mb-4">複数の静止画像(PNG, JPG, WebP, GIF)を一括で読み込んでアニメーションを作成します。</p>
-          <label class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-lg shadow-indigo-600/20 transition">
+          <h3 class="text-sm font-bold text-slate-200 mb-1">画像や音楽ファイルをドラッグ＆ドロップ</h3>
+          <p class="text-xs text-slate-400 mb-3">複数の静止画・BGMを選択できます</p>
+          <button class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition">
             ファイルを選択
-            <input type="file" id="dropzoneInput" multiple accept="image/*" class="hidden">
-          </label>
-        </div>
-      </div>
-
-      <!-- Playback Controls Bar -->
-      <div class="h-12 border-t border-slate-700/80 bg-slate-800 px-6 flex items-center justify-between">
-        <div class="flex items-center space-x-2">
-          <button id="prevFrameBtn" class="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition text-xs" title="前のフレーム">
-            <i class="fa-solid fa-backward-step"></i>
-          </button>
-          
-          <button id="playPauseBtn" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition font-semibold flex items-center space-x-1.5 text-xs shadow-md shadow-indigo-600/20">
-            <i id="playIcon" class="fa-solid fa-play"></i>
-            <span id="playText">再生</span>
-          </button>
-
-          <button id="nextFrameBtn" class="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition text-xs" title="次のフレーム">
-            <i class="fa-solid fa-forward-step"></i>
           </button>
         </div>
 
-        <!-- Loop Toggle & Speed Adjust -->
-        <div class="flex items-center space-x-4 text-xs">
-          <label class="flex items-center space-x-1.5 cursor-pointer text-slate-300">
-            <input type="checkbox" id="loopToggle" checked class="rounded accent-indigo-600 bg-slate-800 border-slate-700">
-            <span>ループ再生</span>
-          </label>
+        <!-- Preview Canvas Centerer -->
+        <div id="canvasWrapper" class="relative hidden max-w-full max-h-full flex items-center justify-center bg-checker shadow-2xl rounded-xl border border-slate-800 overflow-hidden">
+          <canvas id="previewCanvas" class="block max-w-full max-h-[calc(100vh-22rem)] object-contain"></canvas>
+        </div>
 
-          <div class="flex items-center space-x-1.5 text-slate-400">
-            <span>速度倍率:</span>
-            <select id="speedMultiplierSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 font-mono text-xs">
-              <option value="0.5">0.5x (遅く)</option>
-              <option value="1.0" selected>1.0x (標準)</option>
-              <option value="1.5">1.5x</option>
-              <option value="2.0">2.0x (速く)</option>
-            </select>
+        <!-- Playback Control & Seekbar Bar -->
+        <div id="playbackBar" class="w-full max-w-2xl mt-3 bg-slate-800/90 border border-slate-700/80 rounded-xl px-3.5 py-2 flex items-center space-x-3 shadow-lg backdrop-blur hidden">
+          <button id="playPauseBtn" class="w-8 h-8 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg flex items-center justify-center text-xs transition shadow-md shadow-indigo-600/30 shrink-0">
+            <i id="playPauseIcon" class="fa-solid fa-play"></i>
+          </button>
+
+          <!-- Current / Total Time -->
+          <div class="text-[11px] font-mono text-slate-300 min-w-[85px] shrink-0">
+            <span id="currentTimeText">00.0s</span> / <span id="totalTimeText">00.0s</span>
+          </div>
+
+          <!-- Seekbar -->
+          <input type="range" id="seekbar" min="0" max="100" value="0" step="0.1" class="w-full accent-indigo-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer">
+
+          <!-- Volume & Mute -->
+          <div class="flex items-center space-x-1.5 shrink-0 pl-2 border-l border-slate-700">
+            <button id="muteBtn" class="text-slate-400 hover:text-white text-xs w-6 text-center">
+              <i id="muteIcon" class="fa-solid fa-volume-high"></i>
+            </button>
+            <input type="range" id="volumeSlider" min="0" max="1" value="1" step="0.05" class="w-16 accent-indigo-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer">
           </div>
         </div>
-      </div>
-    </section>
 
-    <!-- Right Panel: Selected Frame Inspector -->
-    <aside class="w-64 bg-slate-800/90 border-l border-slate-700/80 flex flex-col shrink-0 z-10">
-      <div class="p-3 border-b border-slate-700/80 font-bold text-xs text-slate-300 uppercase tracking-wider flex items-center space-x-2">
-        <i class="fa-solid fa-circle-info text-indigo-400"></i>
-        <span>選択フレームの詳細設定</span>
-      </div>
+      </section>
 
-      <div id="inspectorContent" class="p-4 space-y-4 text-xs overflow-y-auto flex-1">
-        <p class="text-slate-500 text-center py-8 text-[11px]">タイムラインで画像を選択すると詳細が表示されます。</p>
-      </div>
-    </aside>
+      <!-- Bottom Timeline Panel (Fixed Height & Responsive Scrollable Tracks) -->
+      <section id="timelinePanel" class="h-72 bg-slate-800/95 border-t border-slate-700/80 flex flex-col shrink-0 relative z-10">
+        
+        <!-- Timeline Header Controls -->
+        <div class="px-4 py-2 bg-slate-900/80 border-b border-slate-700/80 flex items-center justify-between text-xs">
+          <div class="flex items-center space-x-3">
+            <span class="font-bold text-slate-300 uppercase tracking-wider flex items-center text-[11px]">
+              <i class="fa-solid fa-timeline text-indigo-400 mr-1.5"></i> タイムライン
+            </span>
+
+            <!-- Synchronize Duration Buttons -->
+            <button id="syncImgToAudioBtn" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium border border-slate-700 rounded-md transition flex items-center space-x-1">
+              <i class="fa-solid fa-wand-magic-sparkles text-indigo-400"></i>
+              <span>画像長 ➔ 音楽長に同期</span>
+            </button>
+            <button id="syncAudioToImgBtn" class="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-medium border border-slate-700 rounded-md transition flex items-center space-x-1">
+              <i class="fa-solid fa-wand-magic-sparkles text-emerald-400"></i>
+              <span>音楽長 ➔ 画像長に同期</span>
+            </button>
+          </div>
+
+          <!-- Timeline Zoom Slider -->
+          <div class="flex items-center space-x-2">
+            <span class="text-slate-400 text-[11px]">縮尺ズーム:</span>
+            <i class="fa-solid fa-magnifying-glass-minus text-slate-500 text-[10px]"></i>
+            <input type="range" id="timelineZoomSlider" min="10" max="150" value="50" class="w-24 accent-indigo-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer">
+            <i class="fa-solid fa-magnifying-glass-plus text-slate-500 text-[10px]"></i>
+          </div>
+        </div>
+
+        <!-- Scrollable Tracks Wrapper -->
+        <div id="tracksScrollContainer" class="flex-1 overflow-x-auto overflow-y-auto p-3 relative space-y-3">
+          
+          <!-- Playhead Line Indicator -->
+          <div id="playheadLine" class="absolute top-0 bottom-0 w-0.5 bg-rose-500 z-30 pointer-events-none hidden">
+            <div class="w-3 h-3 bg-rose-500 rotate-45 -ml-1.25 -mt-1 rounded-sm shadow"></div>
+          </div>
+
+          <!-- Image Track -->
+          <div class="space-y-1">
+            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center">
+              <i class="fa-solid fa-image text-indigo-400 mr-1"></i> 画像トラック
+            </div>
+            <div id="imageTrack" class="flex items-center space-x-1 min-h-[76px] bg-slate-900/60 p-1.5 rounded-xl border border-slate-700/60 relative">
+              <div class="text-xs text-slate-500 italic p-2">画像ファイルがありません。ヘッダーから追加してください。</div>
+            </div>
+          </div>
+
+          <!-- Audio Track -->
+          <div class="space-y-1">
+            <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center">
+              <i class="fa-solid fa-music text-emerald-400 mr-1"></i> 音楽トラック
+            </div>
+            <div id="audioTrack" class="flex items-center space-x-1 min-h-[56px] bg-slate-900/60 p-1.5 rounded-xl border border-slate-700/60 relative">
+              <div class="text-xs text-slate-500 italic p-2">音楽ファイルがありません。BGMなしで進行できます。</div>
+            </div>
+          </div>
+
+        </div>
+
+      </section>
+
+    </div>
+
   </main>
 
-  <!-- Bottom Panel: Visual Video-Editor Style Timeline -->
-  <footer class="h-44 bg-slate-800/90 border-t border-slate-700/80 flex flex-col shrink-0 z-20">
-    <!-- Timeline Header Controls -->
-    <div class="h-8 border-b border-slate-700/80 px-4 flex items-center justify-between text-[11px] text-slate-400 bg-slate-900/60">
-      <div class="flex items-center space-x-2">
-        <i class="fa-solid fa-layer-group text-indigo-400"></i>
-        <span class="font-bold text-slate-200">シーケンスタイムライン</span>
-        <span class="text-[10px] text-slate-500">（カード右端ドラッグで個別の表示時間を伸縮可能）</span>
-      </div>
-
-      <div class="flex items-center space-x-3 font-mono text-[10px]">
-        <span>総時間: <span id="timelineDurationLabel" class="text-indigo-400 font-bold">0.0s</span></span>
-      </div>
-    </div>
-
-    <!-- Scrollable Timeline Track Container -->
-    <div id="timelineScrollContainer" class="flex-1 p-3 overflow-x-auto overflow-y-hidden flex items-center space-x-2 relative bg-slate-950/60">
-      <div id="timelineList" class="flex items-center space-x-2 h-full min-w-full">
-        <!-- Frame cards will be inserted dynamically -->
-      </div>
-    </div>
-  </footer>
-
-  <!-- Export Settings Modal -->
-  <div id="exportModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 hidden">
-    <div class="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md p-5 shadow-2xl space-y-4">
-      <div class="flex items-center justify-between border-b border-slate-700 pb-3">
-        <h3 class="font-bold text-sm text-white flex items-center space-x-2">
-          <i class="fa-solid fa-download text-emerald-400"></i>
-          <span>アニメーション画像を出力</span>
+  <!-- Export Modal -->
+  <div id="exportModal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 hidden">
+    <div class="bg-slate-800 border border-slate-700 rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden flex flex-col">
+      
+      <!-- Modal Header -->
+      <div class="px-5 py-3.5 bg-slate-900/90 border-b border-slate-700 flex items-center justify-between">
+        <h3 class="text-sm font-bold text-slate-100 flex items-center">
+          <i class="fa-solid fa-file-export text-indigo-400 mr-2"></i> ファイル書き出し保存
         </h3>
-        <button id="closeExportModalBtn" class="text-slate-400 hover:text-white transition">
-          <i class="fa-solid fa-xmark text-base"></i>
+        <button id="closeExportModalBtn" class="text-slate-400 hover:text-white text-sm">
+          <i class="fa-solid fa-xmark"></i>
         </button>
       </div>
 
-      <div class="space-y-4 text-xs">
-        <!-- Export Format Selection -->
-        <div>
-          <label class="block text-slate-300 font-medium mb-1.5">出力フォーマット:</label>
-          <div class="grid grid-cols-3 gap-2">
-            <label class="border border-slate-700 rounded-lg p-2.5 cursor-pointer bg-slate-900/60 hover:border-indigo-500 transition text-center flex flex-col items-center">
-              <input type="radio" name="exportFormat" value="webp" checked class="hidden peer">
-              <span class="font-bold text-sm peer-checked:text-indigo-400">WebP</span>
-              <span class="text-[10px] text-slate-400 mt-0.5">Animated WebP</span>
-            </label>
-            <label class="border border-slate-700 rounded-lg p-2.5 cursor-pointer bg-slate-900/60 hover:border-indigo-500 transition text-center flex flex-col items-center">
-              <input type="radio" name="exportFormat" value="apng" class="hidden peer">
-              <span class="font-bold text-sm peer-checked:text-indigo-400">APNG</span>
-              <span class="text-[10px] text-slate-400 mt-0.5">高画質・PNG</span>
-            </label>
-            <label class="border border-slate-700 rounded-lg p-2.5 cursor-pointer bg-slate-900/60 hover:border-indigo-500 transition text-center flex flex-col items-center">
-              <input type="radio" name="exportFormat" value="gif" class="hidden peer">
-              <span class="font-bold text-sm peer-checked:text-indigo-400">GIF</span>
-              <span class="text-[10px] text-slate-400 mt-0.5">標準互換</span>
-            </label>
-          </div>
-        </div>
+      <!-- Export Tabs Header -->
+      <div class="flex border-b border-slate-700 bg-slate-900/40 px-5 pt-2 space-x-2">
+        <button id="tabBtnImage" class="export-tab-btn py-2 px-4 text-xs font-semibold rounded-t-lg border-b-2 border-indigo-500 text-indigo-400 bg-slate-800">
+          <i class="fa-solid fa-image mr-1"></i> 画像アニメ
+        </button>
+        <button id="tabBtnVideo" class="export-tab-btn py-2 px-4 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-slate-200">
+          <i class="fa-solid fa-video mr-1"></i> 動画
+        </button>
+        <button id="tabBtnAudio" class="export-tab-btn py-2 px-4 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-slate-200">
+          <i class="fa-solid fa-music mr-1"></i> 音楽のみ
+        </button>
+      </div>
 
-        <!-- WebP Specific Compression Options -->
-        <div id="webpOptionsBox" class="space-y-3 bg-slate-900/60 p-3 rounded-lg border border-slate-700">
-          <div>
-            <label class="block text-slate-300 font-medium mb-1.5">WebP 圧縮方式:</label>
-            <div class="grid grid-cols-2 gap-2">
-              <label class="border border-slate-700 rounded-md p-2 cursor-pointer bg-slate-800 hover:border-indigo-500 transition flex items-center space-x-2">
-                <input type="radio" name="webpCompression" value="lossy" checked class="accent-indigo-600">
-                <div>
-                  <span class="text-xs font-bold text-slate-200 block">非可逆圧縮 (Lossy)</span>
-                  <span class="text-[9px] text-slate-400 block">高圧縮・軽量</span>
-                </div>
-              </label>
-              <label class="border border-slate-700 rounded-md p-2 cursor-pointer bg-slate-800 hover:border-indigo-500 transition flex items-center space-x-2">
-                <input type="radio" name="webpCompression" value="lossless" class="accent-indigo-600">
-                <div>
-                  <span class="text-xs font-bold text-slate-200 block">可逆圧縮 (Lossless)</span>
-                  <span class="text-[9px] text-slate-400 block">画質無劣化・100%</span>
-                </div>
-              </label>
+      <!-- Modal Body -->
+      <div class="p-5 space-y-4">
+        
+        <!-- TAB 1: 画像アニメ -->
+        <div id="tabContentImage" class="export-tab-content space-y-3">
+          <div class="space-y-1">
+            <label class="text-xs text-slate-300 font-semibold block">出力フォーマット</label>
+            <select id="exportImgFormatSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+              <option value="webp" selected>Animated WebP (.webp)</option>
+              <option value="apng">APNG アニメーション (.png)</option>
+              <option value="gif">GIF アニメーション (.gif)</option>
+            </select>
+          </div>
+
+          <!-- WebP Options (Only visible when WebP is selected) -->
+          <div id="webpOptionsBox" class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-3">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-slate-300 font-medium">WebP 圧縮モード:</span>
+              <div class="flex space-x-2">
+                <label class="flex items-center space-x-1 cursor-pointer">
+                  <input type="radio" name="webpLossless" value="lossless" checked class="accent-indigo-500">
+                  <span class="text-slate-200 text-xs">可逆圧縮 (Lossless)</span>
+                </label>
+                <label class="flex items-center space-x-1 cursor-pointer">
+                  <input type="radio" name="webpLossless" value="lossy" class="accent-indigo-500">
+                  <span class="text-slate-200 text-xs">非可逆 (Lossy)</span>
+                </label>
+              </div>
+            </div>
+
+            <div id="webpQualityBox" class="space-y-1 opacity-50 pointer-events-none">
+              <div class="flex justify-between text-xs">
+                <span class="text-slate-400">画質 (Quality)</span>
+                <span id="webpQualityVal" class="font-mono text-indigo-400 font-bold">90%</span>
+              </div>
+              <input type="range" id="webpQualitySlider" min="10" max="100" value="90" class="w-full accent-indigo-500 h-1.5 bg-slate-700 rounded-lg cursor-pointer">
             </div>
           </div>
+        </div>
 
-          <div id="webpQualityContainer">
-            <div class="flex justify-between mb-1">
-              <label class="text-slate-300 font-medium">WebP 画質 (Quality):</label>
-              <span id="webpQualityText" class="font-mono text-indigo-400">90%</span>
+        <!-- TAB 2: 動画 -->
+        <div id="tabContentVideo" class="export-tab-content space-y-3 hidden">
+          <div class="space-y-1">
+            <label class="text-xs text-slate-300 font-semibold block">動画フォーマット</label>
+            <select id="exportVideoFormatSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+              <option value="webm" selected>WebM 動画 (.webm)</option>
+              <option value="mp4">MP4 動画 (.mp4)</option>
+            </select>
+            <p id="mp4SupportNote" class="text-[10px] text-amber-400 hidden">
+              ※ご使用のブラウザがMP4ネイティブ録画をサポートしていない場合はWebMをお試しください。
+            </p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <label class="text-xs text-slate-300 block">フレームレート (FPS)</label>
+              <select id="exportVideoFpsSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                <option value="15">15 fps</option>
+                <option value="24">24 fps (映画風)</option>
+                <option value="30" selected>30 fps (標準)</option>
+                <option value="60">60 fps (滑らか)</option>
+              </select>
             </div>
-            <input type="range" id="webpQualitySlider" min="0.1" max="1.0" step="0.05" value="0.9" class="w-full accent-indigo-500 cursor-pointer">
+            <div class="space-y-1">
+              <label class="text-xs text-slate-300 block">ビットレート (品質)</label>
+              <select id="exportVideoBitrateSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                <option value="2500000">低画質 (2.5 Mbps)</option>
+                <option value="5000000" selected>標準 (5.0 Mbps)</option>
+                <option value="10000000">高画質 (10 Mbps)</option>
+                <option value="20000000">最高画質 (20 Mbps)</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <!-- Scale / Resolution Factor -->
-        <div>
-          <div class="flex justify-between mb-1">
-            <label class="text-slate-300 font-medium">出力スケール (解像度):</label>
-            <span id="exportScaleText" class="font-mono text-indigo-400">100%</span>
+        <!-- TAB 3: 音楽のみ -->
+        <div id="tabContentAudio" class="export-tab-content space-y-3 hidden">
+          <div class="space-y-1">
+            <label class="text-xs text-slate-300 font-semibold block">音声フォーマット</label>
+            <select id="exportAudioFormatSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+              <option value="mp3" selected>MP3 音声 (.mp3)</option>
+              <option value="wav">WAV 非圧縮 (.wav)</option>
+              <option value="ogg">OGG 音声 (.ogg)</option>
+            </select>
           </div>
-          <input type="range" id="exportScaleSlider" min="0.25" max="1.0" step="0.25" value="1.0" class="w-full accent-indigo-500 cursor-pointer">
-          <p class="text-[10px] text-slate-500 mt-1">※解像度を下げると生成速度が向上し、ファイルサイズが小さくなります。</p>
+
+          <!-- Bitrate Selector for Compressed Audio (MP3/OGG) -->
+          <div id="audioBitrateBox" class="space-y-1">
+            <label class="text-xs text-slate-300 block">ビットレート (圧縮率)</label>
+            <select id="exportAudioBitrateSelect" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+              <option value="128">128 kbps (標準)</option>
+              <option value="192" selected>192 kbps (高音質)</option>
+              <option value="256">256 kbps (超高音質)</option>
+              <option value="320">320 kbps (最高音質)</option>
+            </select>
+          </div>
         </div>
 
-        <!-- Progress Indicator -->
-        <div id="exportProgressBox" class="hidden space-y-2 pt-2 border-t border-slate-700">
-          <div class="flex justify-between text-[11px] text-slate-300 font-semibold">
-            <span id="exportStatusText">エンコード中...</span>
-            <span id="exportPercentText" class="font-mono text-indigo-400">0%</span>
+        <!-- Progress Bar (Hidden by default) -->
+        <div id="exportProgressBox" class="space-y-1.5 hidden pt-2 border-t border-slate-700">
+          <div class="flex justify-between text-xs">
+            <span id="exportProgressText" class="text-indigo-400 font-semibold">書き出し中...</span>
+            <span id="exportProgressPercent" class="font-mono text-slate-300">0%</span>
           </div>
-          <div class="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-700">
-            <div id="exportProgressBar" class="bg-indigo-500 h-full w-0 transition-all duration-150"></div>
+          <div class="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-700">
+            <div id="exportProgressBar" class="bg-indigo-600 h-full w-0 transition-all duration-100"></div>
           </div>
         </div>
+
       </div>
 
       <!-- Modal Footer -->
-      <div class="flex justify-end space-x-2 pt-2">
-        <button id="cancelExportBtn" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-xs font-semibold transition">キャンセル</button>
-        <button id="startExportBtn" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-emerald-600/20 transition">書き出し開始</button>
+      <div class="px-5 py-3 bg-slate-900/90 border-t border-slate-700 flex justify-end space-x-2">
+        <button id="cancelExportBtn" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-semibold rounded-lg transition">
+          キャンセル
+        </button>
+        <button id="startExportBtn" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-indigo-600/30 transition flex items-center space-x-1.5">
+          <i class="fa-solid fa-download"></i>
+          <span>書き出し開始</span>
+        </button>
       </div>
+
     </div>
   </div>
 
-  <!-- Pure JS GIF Encoder Dependencies (NeuQuant & LZW Encoder) -->
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 space-y-2 pointer-events-none"></div>
+
   <script>
-    // Pure JS NeuQuant Palette Quantizer
-    class NeuQuant {
-      constructor(pixels, samplefac = 10) {
-        this.netsize = 256;
-        this.network = new Array(256);
-        this.netindex = new Int32Array(256);
-        this.bias = new Int32Array(256);
-        this.freq = new Int32Array(256);
-        this.radpower = new Int32Array(32);
-        this.pixels = pixels;
-        this.samplefac = samplefac;
-
-        for (let i = 0; i < 256; i++) {
-          let v = (i << 12) / 256;
-          this.network[i] = new Float64Array([v, v, v, 0]);
-          this.freq[i] = 65536 / 256;
-          this.bias[i] = 0;
-        }
-      }
-
-      init() {
-        this.learn();
-        this.unbiasnet();
-        this.inxbuild();
-      }
-
-      unbiasnet() {
-        for (let i = 0; i < 256; i++) {
-          this.network[i][0] >>= 4;
-          this.network[i][1] >>= 4;
-          this.network[i][2] >>= 4;
-          this.network[i][3] = i;
-        }
-      }
-
-      alterneigh(rad, i, b, g, r) {
-        let lo = Math.max(0, i - rad);
-        let hi = Math.min(255, i + rad);
-        let k = i + 1;
-        let j = i - 1;
-        let m = 1;
-        while (k <= hi || j >= lo) {
-          let a = this.radpower[m++];
-          if (k <= hi) {
-            let p = this.network[k++];
-            p[0] -= (a * (p[0] - b)) / 65536;
-            p[1] -= (a * (p[1] - g)) / 65536;
-            p[2] -= (a * (p[2] - r)) / 65536;
-          }
-          if (j >= lo) {
-            let p = this.network[j--];
-            p[0] -= (a * (p[0] - b)) / 65536;
-            p[1] -= (a * (p[1] - g)) / 65536;
-            p[2] -= (a * (p[2] - r)) / 65536;
-          }
-        }
-      }
-
-      altersingle(alpha, i, b, g, r) {
-        let p = this.network[i];
-        p[0] -= (alpha * (p[0] - b)) / 1024;
-        p[1] -= (alpha * (p[1] - g)) / 1024;
-        p[2] -= (alpha * (p[2] - r)) / 1024;
-      }
-
-      contest(b, g, r) {
-        let bestd = ~(1 << 31);
-        let bestbiasd = bestd;
-        let bestpos = -1;
-        let bestbiaspos = bestpos;
-
-        for (let i = 0; i < 256; i++) {
-          let p = this.network[i];
-          let dist = Math.abs(p[0] - b) + Math.abs(p[1] - g) + Math.abs(p[2] - r);
-          if (dist < bestd) {
-            bestd = dist;
-            bestpos = i;
-          }
-          let biasdist = dist - (this.bias[i] >> 6);
-          if (biasdist < bestbiasd) {
-            bestbiasd = biasdist;
-            bestbiaspos = i;
-          }
-          let betafreq = this.freq[i] >> 10;
-          this.freq[i] -= betafreq;
-          this.bias[i] += betafreq << 10;
-        }
-        this.freq[bestpos] += 64;
-        this.bias[bestpos] -= 65536;
-        return bestbiaspos;
-      }
-
-      learn() {
-        let lengthcount = this.pixels.length;
-        let samplefac = this.samplefac;
-        let alphadec = 30 + (samplefac - 1) / 3;
-        let samplepixels = Math.floor(lengthcount / (4 * samplefac));
-        let delta = Math.floor(samplepixels / 100);
-        let alpha = 1024;
-        let radius = 2048;
-        let rad = radius >> 6;
-        if (rad <= 1) rad = 0;
-        for (let i = 0; i < rad; i++) {
-          this.radpower[i] = Math.floor(alpha * (((rad * rad - i * i) * 256) / (rad * rad)));
-        }
-
-        let step;
-        if (lengthcount < 1600) {
-          step = 4;
-        } else if (lengthcount % 499 !== 0) {
-          step = 499 * 4;
-        } else if (lengthcount % 491 !== 0) {
-          step = 491 * 4;
-        } else if (lengthcount % 487 !== 0) {
-          step = 487 * 4;
-        } else {
-          step = 503 * 4;
-        }
-
-        let pix = 0;
-        let i = 0;
-        while (i < samplepixels) {
-          let b = (this.pixels[pix] & 0xff) << 4;
-          let g = (this.pixels[pix + 1] & 0xff) << 4;
-          let r = (this.pixels[pix + 2] & 0xff) << 4;
-          let j = this.contest(b, g, r);
-
-          this.altersingle(alpha, j, b, g, r);
-          if (rad !== 0) this.alterneigh(rad, j, b, g, r);
-
-          pix += step;
-          if (pix >= lengthcount) pix -= lengthcount;
-
-          i++;
-          if (delta === 0) delta = 1;
-          if (i % delta === 0) {
-            alpha -= Math.floor(alpha / alphadec);
-            radius -= Math.floor(radius / 30);
-            rad = radius >> 6;
-            if (rad <= 1) rad = 0;
-            for (let j = 0; j < rad; j++) {
-              this.radpower[j] = Math.floor(alpha * (((rad * rad - j * j) * 256) / (rad * rad)));
-            }
-          }
-        }
-      }
-
-      inxbuild() {
-        let previouscol = 0;
-        let startpos = 0;
-        for (let i = 0; i < 256; i++) {
-          let p = this.network[i];
-          let smallpos = i;
-          let smallval = p[1];
-          for (let j = i + 1; j < 256; j++) {
-            let q = this.network[j];
-            if (q[1] < smallval) {
-              smallpos = j;
-              smallval = q[1];
-            }
-          }
-          let q = this.network[smallpos];
-          if (i !== smallpos) {
-            [p[0], q[0]] = [q[0], p[0]];
-            [p[1], q[1]] = [q[1], p[1]];
-            [p[2], q[2]] = [q[2], p[2]];
-            [p[3], q[3]] = [q[3], p[3]];
-          }
-          if (smallval !== previouscol) {
-            this.netindex[previouscol] = (startpos + i) >> 1;
-            for (let j = previouscol + 1; j < smallval; j++) this.netindex[j] = i;
-            previouscol = smallval;
-            startpos = i;
-          }
-        }
-        this.netindex[previouscol] = (startpos + 255) >> 1;
-        for (let j = previouscol + 1; j < 256; j++) this.netindex[j] = 255;
-      }
-
-      lookup(b, g, r) {
-        let bestd = 1000;
-        let best = -1;
-        let i = this.netindex[g];
-        let j = i - 1;
-
-        while (i < 256 || j >= 0) {
-          if (i < 256) {
-            let p = this.network[i];
-            let dist = p[1] - g;
-            if (dist >= bestd) i = 256;
-            else {
-              i++;
-              if (dist < 0) dist = -dist;
-              let a = p[0] - b;
-              if (a < 0) a = -a;
-              dist += a;
-              if (dist < bestd) {
-                a = p[2] - r;
-                if (a < 0) a = -a;
-                dist += a;
-                if (dist < bestd) {
-                  bestd = dist;
-                  best = p[3];
-                }
-              }
-            }
-          }
-          if (j >= 0) {
-            let p = this.network[j];
-            let dist = g - p[1];
-            if (dist >= bestd) j = -1;
-            else {
-              j--;
-              if (dist < 0) dist = -dist;
-              let a = p[0] - b;
-              if (a < 0) a = -a;
-              dist += a;
-              if (dist < bestd) {
-                a = p[2] - r;
-                if (a < 0) a = -a;
-                dist += a;
-                if (dist < bestd) {
-                  bestd = dist;
-                  best = p[3];
-                }
-              }
-            }
-          }
-        }
-        return best;
-      }
-
-      getPalette() {
-        let pal = new Uint8Array(256 * 3);
-        for (let i = 0; i < 256; i++) {
-          for (let j = 0; j < 256; j++) {
-            if (this.network[j][3] === i) {
-              pal[i * 3 + 0] = Math.round(this.network[j][2]); // R
-              pal[i * 3 + 1] = Math.round(this.network[j][1]); // G
-              pal[i * 3 + 2] = Math.round(this.network[j][0]); // B
-              break;
-            }
-          }
-        }
-        return pal;
-      }
-    }
-
-    // Pure JS LZW Compressor for GIF
-    function encodeGIFLZW(width, height, pixels, minCodeSize) {
-      const out = [];
-      const clearCode = 1 << minCodeSize;
-      const eofCode = clearCode + 1;
-
-      let codeSize = minCodeSize + 1;
-      let freeCode = clearCode + 2;
-
-      let dict = new Map();
-
-      let accum = 0;
-      let bits = 0;
-      let block = [];
-
-      function writeCode(code) {
-        accum |= (code << bits);
-        bits += codeSize;
-        while (bits >= 8) {
-          block.push(accum & 0xff);
-          accum >>= 8;
-          bits -= 8;
-          if (block.length === 255) {
-            out.push(255, ...block);
-            block = [];
-          }
-        }
-      }
-
-      function flush() {
-        if (bits > 0) {
-          block.push(accum & 0xff);
-          accum = 0;
-          bits = 0;
-        }
-        if (block.length > 0) {
-          out.push(block.length, ...block);
-          block = [];
-        }
-      }
-
-      writeCode(clearCode);
-
-      let prefix = pixels[0];
-
-      for (let i = 1; i < pixels.length; i++) {
-        const k = pixels[i];
-        const key = (prefix << 16) | k;
-        if (dict.has(key)) {
-          prefix = dict.get(key);
-        } else {
-          writeCode(prefix);
-          if (freeCode < 4096) {
-            dict.set(key, freeCode++);
-            if (freeCode === (1 << codeSize) + 1 && codeSize < 12) {
-              codeSize++;
-            }
-          } else {
-            writeCode(clearCode);
-            dict.clear();
-            codeSize = minCodeSize + 1;
-            freeCode = clearCode + 2;
-          }
-          prefix = k;
-        }
-      }
-
-      writeCode(prefix);
-      writeCode(eofCode);
-      flush();
-      out.push(0);
-
-      return new Uint8Array(out);
-    }
-  </script>
-
-  <!-- Application Logic -->
-  <script>
-    // Global Application State
+    // Application Global State
     const state = {
-      frames: [], // Array of { id, src, img, duration (in sec), width, height }
-      selectedFrameIndex: 0,
-      currentFrameIndex: 0,
-      isPlaying: false,
-      isLooping: true,
-      speedMultiplier: 1.0,
+      canvasWidth: 640,
+      canvasHeight: 480,
+      bgColor: '#0f172a',
+      isTransparent: false,
       
-      // Canvas Settings
-      aspectRatioMode: 'auto', // auto, 1:1, 16:9, 4:3, custom
-      customWidth: 800,
-      customHeight: 600,
-      fitMode: 'contain', // contain, cover, stretch
-      bgColor: '#000000',
-      
-      // Playback Timer
-      playbackTimer: null,
-      
-      // Dragging State
-      draggedIndex: null,
+      frames: [], // [{ id, img, originalWidth, originalHeight, duration: 1.0, name }]
+      audioClips: [], // [{ id, buffer, duration: 10.0, originalDuration: 10.0, startTime: 0, name }]
 
-      // Timeline Resizing State
-      isResizingDuration: false,
-      resizingIndex: null,
-      resizeStartX: 0,
-      resizeStartDuration: 1.0
+      selectedFrameId: null,
+      selectedAudioId: null,
+
+      isPlaying: false,
+      currentTime: 0.0,
+      totalDuration: 0.0,
+      volume: 1.0,
+      isMuted: false,
+
+      pixelsPerSecond: 50, // Timeline scale
+      activeExportTab: 'image' // 'image', 'video', 'audio'
     };
 
-    // DOM Element References
+    // Undo / Redo History Stack
+    const historyStack = [];
+    let historyIndex = -1;
+    const MAX_HISTORY = 30;
+
+    function commitStateChange() {
+      if (historyIndex < historyStack.length - 1) {
+        historyStack.splice(historyIndex + 1);
+      }
+      
+      // Deep snapshot
+      const snapshot = {
+        canvasWidth: state.canvasWidth,
+        canvasHeight: state.canvasHeight,
+        bgColor: state.bgColor,
+        isTransparent: state.isTransparent,
+        frames: state.frames.map(f => ({ ...f })),
+        audioClips: state.audioClips.map(a => ({ ...a }))
+      };
+
+      historyStack.push(snapshot);
+      if (historyStack.length > MAX_HISTORY) {
+        historyStack.shift();
+      } else {
+        historyIndex++;
+      }
+      updateUndoRedoUI();
+    }
+
+    function undo() {
+      if (historyIndex > 0) {
+        historyIndex--;
+        applyStateSnapshot(historyStack[historyIndex]);
+      }
+    }
+
+    function redo() {
+      if (historyIndex < historyStack.length - 1) {
+        historyIndex++;
+        applyStateSnapshot(historyStack[historyIndex]);
+      }
+    }
+
+    function applyStateSnapshot(snapshot) {
+      state.canvasWidth = snapshot.canvasWidth;
+      state.canvasHeight = snapshot.canvasHeight;
+      state.bgColor = snapshot.bgColor;
+      state.isTransparent = snapshot.isTransparent;
+      state.frames = snapshot.frames.map(f => ({ ...f }));
+      state.audioClips = snapshot.audioClips.map(a => ({ ...a }));
+
+      elements.canvasWidthInput.value = state.canvasWidth;
+      elements.canvasHeightInput.value = state.canvasHeight;
+      elements.bgColorPicker.value = state.isTransparent ? '#0f172a' : state.bgColor;
+      elements.bgColorTextInput.value = state.isTransparent ? 'transparent' : state.bgColor;
+
+      recalculateTotalDuration();
+      renderTimeline();
+      renderPreviewCanvas();
+      updateInspector();
+      updateUndoRedoUI();
+    }
+
+    function updateUndoRedoUI() {
+      elements.undoBtn.disabled = historyIndex <= 0;
+      elements.redoBtn.disabled = historyIndex >= historyStack.length - 1;
+    }
+
     const elements = {
-      imageInput: document.getElementById('imageInput'),
-      dropzoneInput: document.getElementById('dropzoneInput'),
-      emptyDropzone: document.getElementById('emptyDropzone'),
-      clearAllBtn: document.getElementById('clearAllBtn'),
-      
+      fileInputImages: document.getElementById('fileInputImages'),
+      fileInputAudio: document.getElementById('fileInputAudio'),
+      dropzone: document.getElementById('dropzone'),
+      workspace: document.getElementById('workspace'),
+      canvasWrapper: document.getElementById('canvasWrapper'),
       previewCanvas: document.getElementById('previewCanvas'),
-      canvasContainer: document.getElementById('canvasContainer'),
-      
+
+      addImagesBtn: document.getElementById('addImagesBtn'),
+      addAudioBtn: document.getElementById('addAudioBtn'),
+      clearAllBtn: document.getElementById('clearAllBtn'),
+      undoBtn: document.getElementById('undoBtn'),
+      redoBtn: document.getElementById('redoBtn'),
+
+      playbackBar: document.getElementById('playbackBar'),
       playPauseBtn: document.getElementById('playPauseBtn'),
-      playIcon: document.getElementById('playIcon'),
-      playText: document.getElementById('playText'),
-      prevFrameBtn: document.getElementById('prevFrameBtn'),
-      nextFrameBtn: document.getElementById('nextFrameBtn'),
-      loopToggle: document.getElementById('loopToggle'),
-      speedMultiplierSelect: document.getElementById('speedMultiplierSelect'),
-      playbackCounter: document.getElementById('playbackCounter'),
-      
-      aspectRatioSelect: document.getElementById('aspectRatioSelect'),
-      customDimensionBox: document.getElementById('customDimensionBox'),
-      customWidthInput: document.getElementById('customWidthInput'),
-      customHeightInput: document.getElementById('customHeightInput'),
-      fitModeSelect: document.getElementById('fitModeSelect'),
-      bgColorInput: document.getElementById('bgColorInput'),
+      playPauseIcon: document.getElementById('playPauseIcon'),
+      currentTimeText: document.getElementById('currentTimeText'),
+      totalTimeText: document.getElementById('totalTimeText'),
+      seekbar: document.getElementById('seekbar'),
+      muteBtn: document.getElementById('muteBtn'),
+      muteIcon: document.getElementById('muteIcon'),
+      volumeSlider: document.getElementById('volumeSlider'),
+
+      resPresetSelect: document.getElementById('resPresetSelect'),
+      canvasWidthInput: document.getElementById('canvasWidthInput'),
+      canvasHeightInput: document.getElementById('canvasHeightInput'),
+      bgColorPicker: document.getElementById('bgColorPicker'),
       bgColorTextInput: document.getElementById('bgColorTextInput'),
       bgTransparentBtn: document.getElementById('bgTransparentBtn'),
-      
-      statTotalFrames: document.getElementById('statTotalFrames'),
-      statTotalDuration: document.getElementById('statTotalDuration'),
-      statCanvasResolution: document.getElementById('statCanvasResolution'),
-      
       inspectorContent: document.getElementById('inspectorContent'),
-      timelineList: document.getElementById('timelineList'),
-      timelineDurationLabel: document.getElementById('timelineDurationLabel'),
-      
-      exportModalBtn: document.getElementById('exportModalBtn'),
+
+      syncImgToAudioBtn: document.getElementById('syncImgToAudioBtn'),
+      syncAudioToImgBtn: document.getElementById('syncAudioToImgBtn'),
+      timelineZoomSlider: document.getElementById('timelineZoomSlider'),
+      playheadLine: document.getElementById('playheadLine'),
+      imageTrack: document.getElementById('imageTrack'),
+      audioTrack: document.getElementById('audioTrack'),
+
+      openExportModalBtn: document.getElementById('openExportModalBtn'),
       exportModal: document.getElementById('exportModal'),
       closeExportModalBtn: document.getElementById('closeExportModalBtn'),
       cancelExportBtn: document.getElementById('cancelExportBtn'),
       startExportBtn: document.getElementById('startExportBtn'),
-      exportScaleSlider: document.getElementById('exportScaleSlider'),
-      exportScaleText: document.getElementById('exportScaleText'),
-      exportProgressBox: document.getElementById('exportProgressBox'),
-      exportStatusText: document.getElementById('exportStatusText'),
-      exportPercentText: document.getElementById('exportPercentText'),
-      exportProgressBar: document.getElementById('exportProgressBar'),
-      
+
+      tabBtnImage: document.getElementById('tabBtnImage'),
+      tabBtnVideo: document.getElementById('tabBtnVideo'),
+      tabBtnAudio: document.getElementById('tabBtnAudio'),
+      tabContentImage: document.getElementById('tabContentImage'),
+      tabContentVideo: document.getElementById('tabContentVideo'),
+      tabContentAudio: document.getElementById('tabContentAudio'),
+
+      exportImgFormatSelect: document.getElementById('exportImgFormatSelect'),
       webpOptionsBox: document.getElementById('webpOptionsBox'),
+      webpQualityBox: document.getElementById('webpQualityBox'),
       webpQualitySlider: document.getElementById('webpQualitySlider'),
-      webpQualityText: document.getElementById('webpQualityText')
+      webpQualityVal: document.getElementById('webpQualityVal'),
+
+      exportVideoFormatSelect: document.getElementById('exportVideoFormatSelect'),
+      exportVideoFpsSelect: document.getElementById('exportVideoFpsSelect'),
+      exportVideoBitrateSelect: document.getElementById('exportVideoBitrateSelect'),
+      mp4SupportNote: document.getElementById('mp4SupportNote'),
+
+      exportAudioFormatSelect: document.getElementById('exportAudioFormatSelect'),
+      exportAudioBitrateSelect: document.getElementById('exportAudioBitrateSelect'),
+      audioBitrateBox: document.getElementById('audioBitrateBox'),
+
+      exportProgressBox: document.getElementById('exportProgressBox'),
+      exportProgressText: document.getElementById('exportProgressText'),
+      exportProgressPercent: document.getElementById('exportProgressPercent'),
+      exportProgressBar: document.getElementById('exportProgressBar')
     };
 
-    // Helper: Generate unique ID
-    function generateId() {
-      return 'f_' + Math.random().toString(36).substr(2, 9);
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      const bg = type === 'error' ? 'bg-rose-600' : type === 'success' ? 'bg-emerald-600' : 'bg-indigo-600';
+      toast.className = `${bg} text-white text-xs font-semibold px-4 py-2.5 rounded-xl shadow-xl transition-all duration-300 transform translate-y-2 opacity-0 flex items-center space-x-2 pointer-events-auto`;
+      toast.innerHTML = `<i class="fa-solid fa-circle-info"></i><span>${message}</span>`;
+      document.getElementById('toastContainer').appendChild(toast);
+
+      setTimeout(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      }, 10);
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
     }
 
-    // Image Loader
-    async function handleFileSelect(files) {
+    // Web Audio Context Singleton
+    let audioCtx = null;
+    function getAudioContext() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    // File Inputs & Drag & Drop Handling
+    elements.addImagesBtn.addEventListener('click', () => elements.fileInputImages.click());
+    elements.addAudioBtn.addEventListener('click', () => elements.fileInputAudio.click());
+    elements.dropzone.addEventListener('click', () => elements.fileInputImages.click());
+
+    elements.fileInputImages.addEventListener('change', (e) => handleFiles(e.target.files, 'image'));
+    elements.fileInputAudio.addEventListener('change', (e) => handleFiles(e.target.files, 'audio'));
+
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer && e.dataTransfer.files) {
+        handleFiles(e.dataTransfer.files, 'auto');
+      }
+    });
+
+    async function handleFiles(files, forcedType = 'auto') {
       if (!files || files.length === 0) return;
 
-      const fileArray = Array.from(files).filter(file => file.type.startsWith('image/'));
-      if (fileArray.length === 0) return;
+      const imgFiles = [];
+      const audioFiles = [];
 
-      for (const file of fileArray) {
-        const src = await readFileAsDataURL(file);
-        const img = await loadImage(src);
+      for (const file of Array.from(files)) {
+        const type = file.type;
+        const name = file.name.toLowerCase();
 
-        state.frames.push({
-          id: generateId(),
-          src: src,
-          img: img,
-          duration: 1.0, // Default 1.0 second per frame
-          width: img.naturalWidth,
-          height: img.naturalHeight
-        });
+        if (forcedType === 'image' || type.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|bmp|svg)$/.test(name)) {
+          imgFiles.push(file);
+        } else if (forcedType === 'audio' || type.startsWith('audio/') || /\.(mp3|wav|ogg|aac|m4a|flac)$/.test(name)) {
+          audioFiles.push(file);
+        }
       }
 
-      if (state.frames.length > 0 && !state.isPlaying) {
-        state.currentFrameIndex = 0;
-        state.selectedFrameIndex = 0;
+      let stateChanged = false;
+
+      if (imgFiles.length > 0) {
+        for (const f of imgFiles) {
+          const frame = await loadSingleImageFile(f);
+          if (frame) state.frames.push(frame);
+        }
+        
+        // Auto scale image total duration to match audio length if audio exists
+        const totalAudioLen = state.audioClips.reduce((acc, c) => Math.max(acc, c.duration), 0);
+        if (totalAudioLen > 0 && state.frames.length > 0) {
+          const perFrameDur = totalAudioLen / state.frames.length;
+          state.frames.forEach(fr => fr.duration = perFrameDur);
+        }
+        stateChanged = true;
       }
 
-      updateUI();
-      renderPreview();
+      if (audioFiles.length > 0) {
+        for (const f of audioFiles) {
+          const audioClip = await loadSingleAudioFile(f);
+          if (audioClip) state.audioClips.push(audioClip);
+        }
+        stateChanged = true;
+      }
+
+      if (stateChanged) {
+        recalculateTotalDuration();
+        renderTimeline();
+        renderPreviewCanvas();
+        commitStateChange();
+      }
+
+      elements.fileInputImages.value = '';
+      elements.fileInputAudio.value = '';
     }
 
-    function readFileAsDataURL(file) {
+    function loadSingleImageFile(file) {
       return new Promise((resolve) => {
         const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target.result);
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            resolve({
+              id: 'frame_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+              img: img,
+              originalWidth: img.width,
+              originalHeight: img.height,
+              duration: 1.0,
+              name: file.name
+            });
+          };
+          img.onerror = () => resolve(null);
+          img.src = e.target.result;
+        };
         reader.readAsDataURL(file);
       });
     }
 
-    function loadImage(src) {
+    function loadSingleAudioFile(file) {
       return new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.src = src;
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+          try {
+            const ctx = getAudioContext();
+            const arrayBuf = e.target.result;
+            const audioBuf = await ctx.decodeAudioData(arrayBuf);
+            resolve({
+              id: 'audio_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+              buffer: audioBuf,
+              duration: audioBuf.duration,
+              originalDuration: audioBuf.duration,
+              startTime: 0,
+              name: file.name
+            });
+          } catch (err) {
+            showToast('音声ファイルの読み込みに失敗しました。', 'error');
+            resolve(null);
+          }
+        };
+        reader.readAsArrayBuffer(file);
       });
     }
 
-    // Event Listeners for Upload
-    elements.imageInput.addEventListener('change', (e) => handleFileSelect(e.target.files));
-    elements.dropzoneInput.addEventListener('change', (e) => handleFileSelect(e.target.files));
+    function recalculateTotalDuration() {
+      const imgTotal = state.frames.reduce((sum, f) => sum + f.duration, 0);
+      const audioTotal = state.audioClips.reduce((sum, a) => sum + a.duration, 0);
+      state.totalDuration = Math.max(imgTotal, audioTotal, 0);
 
-    // Drag and drop onto center canvas container
-    elements.canvasContainer.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      elements.canvasContainer.classList.add('border-2', 'border-indigo-500');
-    });
+      elements.totalTimeText.textContent = state.totalDuration.toFixed(1) + 's';
+      elements.seekbar.max = state.totalDuration || 1;
 
-    elements.canvasContainer.addEventListener('dragleave', () => {
-      elements.canvasContainer.classList.remove('border-2', 'border-indigo-500');
-    });
-
-    elements.canvasContainer.addEventListener('drop', (e) => {
-      e.preventDefault();
-      elements.canvasContainer.classList.remove('border-2', 'border-indigo-500');
-      if (e.dataTransfer.files) {
-        handleFileSelect(e.dataTransfer.files);
-      }
-    });
-
-    // Clear All
-    elements.clearAllBtn.addEventListener('click', () => {
-      stopPlayback();
-      state.frames = [];
-      state.selectedFrameIndex = 0;
-      state.currentFrameIndex = 0;
-      updateUI();
-      renderPreview();
-    });
-
-    // Get Current Target Canvas Dimensions
-    function getTargetCanvasDimensions() {
-      if (state.frames.length === 0) {
-        return { width: 800, height: 600 };
-      }
-
-      const firstFrame = state.frames[0];
-
-      switch (state.aspectRatioMode) {
-        case '1:1':
-          return { width: 800, height: 800 };
-        case '16:9':
-          return { width: 1280, height: 720 };
-        case '4:3':
-          return { width: 800, height: 600 };
-        case 'custom':
-          return { 
-            width: Math.max(50, state.customWidth), 
-            height: Math.max(50, state.customHeight) 
-          };
-        case 'auto':
-        default:
-          return { width: firstFrame.width, height: firstFrame.height };
+      if (state.frames.length > 0) {
+        elements.dropzone.classList.add('hidden');
+        elements.canvasWrapper.classList.remove('hidden');
+        elements.playbackBar.classList.remove('hidden');
+      } else {
+        elements.dropzone.classList.remove('hidden');
+        elements.canvasWrapper.classList.add('hidden');
+        elements.playbackBar.classList.add('hidden');
       }
     }
 
-    // Draw frame on canvas
-    function renderFrameToCanvas(frame, targetWidth, targetHeight, targetCanvas = null) {
-      const canvas = targetCanvas || document.createElement('canvas');
-      canvas.width = targetWidth;
-      canvas.height = targetHeight;
+    function renderPreviewCanvas() {
+      const canvas = elements.previewCanvas;
+      canvas.width = state.canvasWidth;
+      canvas.height = state.canvasHeight;
       const ctx = canvas.getContext('2d');
 
-      ctx.clearRect(0, 0, targetWidth, targetHeight);
+      // Clear Canvas
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Fill background
-      if (state.bgColor !== 'transparent') {
+      if (!state.isTransparent) {
         ctx.fillStyle = state.bgColor;
-        ctx.fillRect(0, 0, targetWidth, targetHeight);
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
 
-      if (!frame || !frame.img) return canvas;
-
-      const img = frame.img;
-      const imgW = frame.width;
-      const imgH = frame.height;
-
-      if (state.fitMode === 'stretch') {
-        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-      } else if (state.fitMode === 'cover') {
-        const scale = Math.max(targetWidth / imgW, targetHeight / imgH);
-        const nw = imgW * scale;
-        const nh = imgH * scale;
-        const nx = (targetWidth - nw) / 2;
-        const ny = (targetHeight - nh) / 2;
-        ctx.drawImage(img, nx, ny, nw, nh);
-      } else {
-        // contain
-        const scale = Math.min(targetWidth / imgW, targetHeight / imgH);
-        const nw = imgW * scale;
-        const nh = imgH * scale;
-        const nx = (targetWidth - nw) / 2;
-        const ny = (targetHeight - nh) / 2;
-        ctx.drawImage(img, nx, ny, nw, nh);
-      }
-
-      return canvas;
-    }
-
-    // Render Live Main Preview
-    function renderPreview() {
-      if (state.frames.length === 0) {
-        elements.emptyDropzone.classList.remove('hidden');
-        elements.previewCanvas.width = 600;
-        elements.previewCanvas.height = 400;
-        const ctx = elements.previewCanvas.getContext('2d');
-        ctx.clearRect(0, 0, 600, 400);
-        return;
-      }
-
-      elements.emptyDropzone.classList.add('hidden');
-      const targetDim = getTargetCanvasDimensions();
-      const currentFrame = state.frames[state.currentFrameIndex] || state.frames[0];
-
-      renderFrameToCanvas(currentFrame, targetDim.width, targetDim.height, elements.previewCanvas);
-    }
-
-    // Continuous Animation Playback Engine
-    function startPlayback() {
       if (state.frames.length === 0) return;
-      state.isPlaying = true;
-      updatePlaybackUI();
-      scheduleNextFrame();
-    }
 
-    function stopPlayback() {
-      state.isPlaying = false;
-      if (state.playbackTimer) {
-        clearTimeout(state.playbackTimer);
-        state.playbackTimer = null;
-      }
-      updatePlaybackUI();
-    }
-
-    function scheduleNextFrame() {
-      if (!state.isPlaying || state.frames.length === 0) return;
-
-      const currentFrame = state.frames[state.currentFrameIndex];
-      const durationMs = Math.max(20, Math.round((currentFrame.duration * 1000) / state.speedMultiplier));
-
-      state.playbackTimer = setTimeout(() => {
-        if (!state.isPlaying) return;
-
-        if (state.currentFrameIndex < state.frames.length - 1) {
-          state.currentFrameIndex++;
-        } else {
-          if (state.isLooping) {
-            state.currentFrameIndex = 0;
-          } else {
-            stopPlayback();
-            return;
-          }
+      // Determine current frame by currentTime
+      let elapsed = 0;
+      let currentFrame = state.frames[0];
+      for (const frame of state.frames) {
+        if (state.currentTime >= elapsed && state.currentTime < elapsed + frame.duration) {
+          currentFrame = frame;
+          break;
         }
+        elapsed += frame.duration;
+      }
+      if (state.currentTime >= state.totalDuration && state.frames.length > 0) {
+        currentFrame = state.frames[state.frames.length - 1];
+      }
 
-        renderPreview();
-        updateTimelineActiveState();
-        scheduleNextFrame();
-      }, durationMs);
-    }
+      if (currentFrame && currentFrame.img) {
+        // Render letterboxed image
+        const img = currentFrame.img;
+        const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+        const w = img.width * scale;
+        const h = img.height * scale;
+        const x = (canvas.width - w) / 2;
+        const y = (canvas.height - h) / 2;
 
-    function updatePlaybackUI() {
-      if (state.isPlaying) {
-        elements.playText.textContent = '一時停止';
-        elements.playIcon.className = 'fa-solid fa-pause';
-      } else {
-        elements.playText.textContent = '再生';
-        elements.playIcon.className = 'fa-solid fa-play';
+        ctx.drawImage(img, x, y, w, h);
       }
     }
 
-    // Playback Controls Handlers
-    elements.playPauseBtn.addEventListener('click', () => {
+    // Playback Engine
+    let playAnimationId = null;
+    let lastPlayTimestamp = null;
+    let activeAudioSources = [];
+
+    function togglePlayPause() {
       if (state.isPlaying) {
-        stopPlayback();
+        pausePlayback();
       } else {
         startPlayback();
       }
+    }
+
+    function startPlayback() {
+      if (state.totalDuration <= 0) return;
+      getAudioContext();
+
+      if (state.currentTime >= state.totalDuration) {
+        state.currentTime = 0;
+      }
+
+      state.isPlaying = true;
+      elements.playPauseIcon.className = 'fa-solid fa-pause';
+      lastPlayTimestamp = performance.now();
+
+      playAudioClips();
+      playLoop();
+    }
+
+    function pausePlayback() {
+      state.isPlaying = false;
+      elements.playPauseIcon.className = 'fa-solid fa-play';
+      if (playAnimationId) cancelAnimationFrame(playAnimationId);
+      stopAudioClips();
+    }
+
+    function playLoop() {
+      if (!state.isPlaying) return;
+
+      const now = performance.now();
+      const delta = (now - lastPlayTimestamp) / 1000;
+      lastPlayTimestamp = now;
+
+      state.currentTime += delta;
+      if (state.currentTime >= state.totalDuration) {
+        state.currentTime = 0;
+        stopAudioClips();
+        playAudioClips();
+      }
+
+      updatePlaybackUI();
+      renderPreviewCanvas();
+
+      playAnimationId = requestAnimationFrame(playLoop);
+    }
+
+    function updatePlaybackUI() {
+      elements.currentTimeText.textContent = state.currentTime.toFixed(1).padStart(4, '0') + 's';
+      elements.seekbar.value = state.currentTime;
+
+      // Update playhead on timeline
+      if (state.totalDuration > 0) {
+        elements.playheadLine.classList.remove('hidden');
+        const playheadX = state.currentTime * state.pixelsPerSecond + 12; // 12px offset
+        elements.playheadLine.style.left = playheadX + 'px';
+      } else {
+        elements.playheadLine.classList.add('hidden');
+      }
+    }
+
+    function playAudioClips() {
+      stopAudioClips();
+      if (state.isMuted || state.audioClips.length === 0) return;
+
+      const ctx = getAudioContext();
+      for (const clip of state.audioClips) {
+        if (state.currentTime < clip.duration) {
+          const source = ctx.createBufferSource();
+          source.buffer = clip.buffer;
+
+          const gainNode = ctx.createGain();
+          gainNode.gain.value = state.volume;
+
+          source.connect(gainNode);
+          gainNode.connect(ctx.destination);
+
+          const offset = clip.startTime + state.currentTime;
+          if (offset < clip.buffer.duration) {
+            source.start(0, offset, clip.duration - state.currentTime);
+            activeAudioSources.push(source);
+          }
+        }
+      }
+    }
+
+    function stopAudioClips() {
+      activeAudioSources.forEach(s => {
+        try { s.stop(); } catch(e){}
+      });
+      activeAudioSources = [];
+    }
+
+    elements.playPauseBtn.addEventListener('click', togglePlayPause);
+    elements.seekbar.addEventListener('input', (e) => {
+      state.currentTime = parseFloat(e.target.value);
+      updatePlaybackUI();
+      renderPreviewCanvas();
+      if (state.isPlaying) {
+        playAudioClips();
+      }
     });
 
-    elements.prevFrameBtn.addEventListener('click', () => {
-      stopPlayback();
-      if (state.frames.length === 0) return;
-      state.currentFrameIndex = (state.currentFrameIndex - 1 + state.frames.length) % state.frames.length;
-      state.selectedFrameIndex = state.currentFrameIndex;
-      renderPreview();
-      updateUI();
+    elements.volumeSlider.addEventListener('input', (e) => {
+      state.volume = parseFloat(e.target.value);
+      state.isMuted = state.volume === 0;
+      elements.muteIcon.className = state.isMuted ? 'fa-solid fa-volume-xmark' : 'fa-solid fa-volume-high';
+      if (state.isPlaying) playAudioClips();
     });
 
-    elements.nextFrameBtn.addEventListener('click', () => {
-      stopPlayback();
-      if (state.frames.length === 0) return;
-      state.currentFrameIndex = (state.currentFrameIndex + 1) % state.frames.length;
-      state.selectedFrameIndex = state.currentFrameIndex;
-      renderPreview();
-      updateUI();
+    elements.muteBtn.addEventListener('click', () => {
+      state.isMuted = !state.isMuted;
+      elements.muteIcon.className = state.isMuted ? 'fa-solid fa-volume-xmark' : 'fa-solid fa-volume-high';
+      if (state.isPlaying) playAudioClips();
     });
 
-    elements.loopToggle.addEventListener('change', (e) => {
-      state.isLooping = e.target.checked;
+    // Timeline Zoom Slider
+    elements.timelineZoomSlider.addEventListener('input', (e) => {
+      state.pixelsPerSecond = parseInt(e.target.value, 10);
+      renderTimeline();
+      updatePlaybackUI();
     });
 
-    elements.speedMultiplierSelect.addEventListener('change', (e) => {
-      state.speedMultiplier = parseFloat(e.target.value);
+    // Synchronize Duration Actions
+    elements.syncImgToAudioBtn.addEventListener('click', () => {
+      const audioTotal = state.audioClips.reduce((sum, a) => sum + a.duration, 0);
+      if (audioTotal <= 0 || state.frames.length === 0) {
+        showToast('同期を行うための画像および音楽データが必要です。', 'error');
+        return;
+      }
+      const perFrame = audioTotal / state.frames.length;
+      state.frames.forEach(f => f.duration = perFrame);
+      recalculateTotalDuration();
+      renderTimeline();
+      commitStateChange();
+      showToast('画像の合計時間を音楽に同期しました！', 'success');
     });
 
-    // Render Timeline Cards
+    elements.syncAudioToImgBtn.addEventListener('click', () => {
+      const imgTotal = state.frames.reduce((sum, f) => sum + f.duration, 0);
+      if (imgTotal <= 0 || state.audioClips.length === 0) {
+        showToast('同期を行うための画像および音楽データが必要です。', 'error');
+        return;
+      }
+      state.audioClips.forEach(a => {
+        a.duration = Math.min(imgTotal, a.originalDuration - a.startTime);
+      });
+      recalculateTotalDuration();
+      renderTimeline();
+      commitStateChange();
+      showToast('音楽の時間を画像の合計に同期しました！', 'success');
+    });
+
     function renderTimeline() {
-      elements.timelineList.innerHTML = '';
+      renderImageTrack();
+      renderAudioTrack();
+    }
+
+    function renderImageTrack() {
+      const track = elements.imageTrack;
+      track.innerHTML = '';
+
+      if (state.frames.length === 0) {
+        track.innerHTML = '<div class="text-xs text-slate-500 italic p-2">画像ファイルがありません。ヘッダーから追加してください。</div>';
+        return;
+      }
 
       state.frames.forEach((frame, index) => {
-        const isSelected = index === state.selectedFrameIndex;
-        const isActive = index === state.currentFrameIndex;
-
+        const widthPx = Math.max(20, frame.duration * state.pixelsPerSecond);
         const card = document.createElement('div');
-        card.className = `relative shrink-0 bg-slate-900/80 rounded-xl border-2 transition-all cursor-pointer group flex flex-col overflow-hidden select-none ${
-          isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : 'border-slate-700 hover:border-slate-500'
-        }`;
-        card.draggable = true;
-        card.dataset.index = index;
+        const isSelected = state.selectedFrameId === frame.id;
 
-        // Visual width scaling based on duration for video editor feel
-        const durationWidth = Math.min(320, Math.max(110, Math.round(70 + frame.duration * 40)));
-        card.style.width = `${durationWidth}px`;
+        card.className = `relative shrink-0 h-16 rounded-xl overflow-hidden border transition-all cursor-pointer group flex items-center justify-between ${
+          isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/50 bg-indigo-950/60' : 'border-slate-700 bg-slate-800 hover:border-slate-600'
+        }`;
+        card.style.width = widthPx + 'px';
 
         card.innerHTML = `
-          <!-- Header Bar -->
-          <div class="px-2 py-1 bg-slate-800 border-b border-slate-700/80 flex items-center justify-between text-[10px]">
-            <span class="font-mono ${isActive ? 'text-indigo-400 font-bold' : 'text-slate-400'}">
-              #${index + 1} ${isActive ? '▶' : ''}
-            </span>
-            <span class="frame-duration-badge font-mono bg-indigo-500/20 text-indigo-300 px-1.5 py-0.2 rounded font-semibold">
-              ${frame.duration.toFixed(1)}s
-            </span>
+          <div class="absolute inset-0 bg-checker opacity-30 pointer-events-none"></div>
+          <img src="${frame.img.src}" class="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-80 pointer-events-none">
+          <div class="relative z-10 px-2 py-1 flex flex-col justify-between h-full w-full pointer-events-none">
+            <span class="text-[10px] font-bold text-white truncate drop-shadow">${index + 1}. ${frame.name}</span>
+            <span class="text-[10px] font-mono text-indigo-300 font-semibold drop-shadow">${frame.duration.toFixed(1)}s</span>
           </div>
+          <div class="resize-handle-r" data-type="frame" data-id="${frame.id}"></div>
+        `;
 
-          <!-- Thumbnail -->
-          <div class="h-20 bg-slate-950 p-1 flex items-center justify-center relative overflow-hidden">
-            <img src="${frame.src}" class="max-w-full max-h-full object-contain pointer-events-none">
+        card.addEventListener('click', (e) => {
+          if (e.target.classList.contains('resize-handle-r')) return;
+          state.selectedFrameId = frame.id;
+          state.selectedAudioId = null;
+          renderTimeline();
+          updateInspector();
+        });
+
+        track.appendChild(card);
+      });
+
+      setupTrackDragResize();
+    }
+
+    function renderAudioTrack() {
+      const track = elements.audioTrack;
+      track.innerHTML = '';
+
+      if (state.audioClips.length === 0) {
+        track.innerHTML = '<div class="text-xs text-slate-500 italic p-2">音楽ファイルがありません。BGMなしで進行できます。</div>';
+        return;
+      }
+
+      state.audioClips.forEach((clip, index) => {
+        const widthPx = Math.max(20, clip.duration * state.pixelsPerSecond);
+        const card = document.createElement('div');
+        const isSelected = state.selectedAudioId === clip.id;
+
+        card.className = `relative shrink-0 h-12 rounded-xl overflow-hidden border transition-all cursor-pointer group flex items-center justify-between ${
+          isSelected ? 'border-emerald-500 ring-2 ring-emerald-500/50 bg-emerald-950/60' : 'border-slate-700 bg-slate-800 hover:border-slate-600'
+        }`;
+        card.style.width = widthPx + 'px';
+
+        card.innerHTML = `
+          <div class="px-2 py-1 flex items-center justify-between h-full w-full pointer-events-none">
+            <span class="text-[10px] font-bold text-emerald-300 truncate"><i class="fa-solid fa-music mr-1"></i>${clip.name}</span>
+            <span class="text-[10px] font-mono text-slate-300 font-semibold">${clip.duration.toFixed(1)}s</span>
+          </div>
+          <div class="resize-handle-r bg-emerald-500/40 hover:bg-emerald-400" data-type="audio" data-id="${clip.id}"></div>
+        `;
+
+        card.addEventListener('click', (e) => {
+          if (e.target.classList.contains('resize-handle-r')) return;
+          state.selectedAudioId = clip.id;
+          state.selectedFrameId = null;
+          renderTimeline();
+          updateInspector();
+        });
+
+        track.appendChild(card);
+      });
+
+      setupTrackDragResize();
+    }
+
+    function setupTrackDragResize() {
+      document.querySelectorAll('.resize-handle-r').forEach(handle => {
+        handle.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+          const type = handle.getAttribute('data-type');
+          const id = handle.getAttribute('data-id');
+          const startX = e.clientX;
+
+          let targetObj = type === 'frame' ? state.frames.find(f => f.id === id) : state.audioClips.find(a => a.id === id);
+          if (!targetObj) return;
+
+          const startDuration = targetObj.duration;
+
+          function onMouseMove(me) {
+            const deltaX = me.clientX - startX;
+            const deltaSec = deltaX / state.pixelsPerSecond;
+            let newDuration = Math.max(0.1, startDuration + deltaSec);
+
+            if (type === 'audio') {
+              const maxAllowed = targetObj.originalDuration - targetObj.startTime;
+              newDuration = Math.min(newDuration, maxAllowed);
+            }
+
+            targetObj.duration = newDuration;
+            recalculateTotalDuration();
+            renderTimeline();
+            renderPreviewCanvas();
+            updateInspector();
+          }
+
+          function onMouseUp() {
+            window.removeEventListener('mousemove', onMouseMove);
+            window.removeEventListener('mouseup', onMouseUp);
+            commitStateChange();
+          }
+
+          window.addEventListener('mousemove', onMouseMove);
+          window.addEventListener('mouseup', onMouseUp);
+        });
+      });
+    }
+
+    function updateInspector() {
+      const container = elements.inspectorContent;
+      container.innerHTML = '';
+
+      if (state.selectedFrameId) {
+        const frameIndex = state.frames.findIndex(f => f.id === state.selectedFrameId);
+        const frame = state.frames[frameIndex];
+        if (!frame) return;
+
+        container.innerHTML = `
+          <div class="space-y-3">
+            <div class="text-xs font-bold text-indigo-400 truncate">${frame.name}</div>
             
-            <!-- Quick Actions on Hover -->
-            <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center space-x-2">
-              <button class="delete-frame-card p-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition" title="削除">
-                <i class="fa-solid fa-trash-can text-xs"></i>
+            <div class="space-y-1">
+              <label class="text-[11px] text-slate-400 block">表示時間 (秒)</label>
+              <input type="number" id="frameDurationInput" value="${frame.duration}" step="0.1" min="0.1" max="60" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-indigo-500">
+            </div>
+
+            <div class="flex space-x-1 pt-1">
+              <button id="moveFrameLeftBtn" ${frameIndex === 0 ? 'disabled' : ''} class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 text-xs font-medium rounded-lg border border-slate-700 transition">
+                <i class="fa-solid fa-arrow-left mr-1"></i>前へ移動
               </button>
-              <button class="dup-frame-card p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition" title="複製">
-                <i class="fa-solid fa-copy text-xs"></i>
+              <button id="moveFrameRightBtn" ${frameIndex === state.frames.length - 1 ? 'disabled' : ''} class="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-30 text-slate-300 text-xs font-medium rounded-lg border border-slate-700 transition">
+                次へ移動<i class="fa-solid fa-arrow-right ml-1"></i>
               </button>
             </div>
-          </div>
 
-          <!-- Duration Quick Adjust Bar -->
-          <div class="p-1.5 bg-slate-800 border-t border-slate-700/80 flex items-center justify-between">
-            <button class="time-step-down px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-[10px] font-bold">-</button>
-            <span class="frame-duration-text text-[10px] text-slate-400 font-mono">${frame.duration.toFixed(1)}s</span>
-            <button class="time-step-up px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-[10px] font-bold">+</button>
-          </div>
-
-          <!-- Drag Resize Handle (Right Border for Duration Adjustment) -->
-          <div class="duration-resize-handle absolute top-0 right-0 bottom-0 w-2.5 bg-indigo-600/30 hover:bg-indigo-500 cursor-ew-resize flex items-center justify-center transition-colors group/handle z-20" title="ドラッグで表示時間を調整">
-            <div class="w-0.5 h-6 bg-indigo-400/80 rounded-full group-hover/handle:bg-white"></div>
+            <button id="deleteFrameBtn" class="w-full py-1.5 bg-rose-900/40 hover:bg-rose-800/60 text-rose-300 text-xs font-medium rounded-lg border border-rose-700/60 transition flex items-center justify-center space-x-1">
+              <i class="fa-solid fa-trash-can"></i>
+              <span>画像を削除</span>
+            </button>
           </div>
         `;
 
-        // Card Click Selection
-        card.addEventListener('click', (e) => {
-          if (e.target.closest('.delete-frame-card') || e.target.closest('.dup-frame-card') || e.target.closest('.time-step-down') || e.target.closest('.time-step-up') || e.target.closest('.duration-resize-handle')) return;
-          state.selectedFrameIndex = index;
-          state.currentFrameIndex = index;
-          stopPlayback();
-          renderPreview();
-          updateUI();
+        document.getElementById('frameDurationInput').addEventListener('change', (e) => {
+          frame.duration = Math.max(0.1, parseFloat(e.target.value) || 1.0);
+          recalculateTotalDuration();
+          renderTimeline();
+          renderPreviewCanvas();
+          commitStateChange();
         });
 
-        // Quick Delete
-        card.querySelector('.delete-frame-card').addEventListener('click', (e) => {
-          e.stopPropagation();
-          deleteFrame(index);
-        });
-
-        // Quick Duplicate
-        card.querySelector('.dup-frame-card').addEventListener('click', (e) => {
-          e.stopPropagation();
-          duplicateFrame(index);
-        });
-
-        // Time +/- Step
-        card.querySelector('.time-step-down').addEventListener('click', (e) => {
-          e.stopPropagation();
-          frame.duration = Math.max(0.1, +(frame.duration - 0.1).toFixed(1));
-          updateUI();
-          if (state.selectedFrameIndex === index) updateInspector();
-        });
-
-        card.querySelector('.time-step-up').addEventListener('click', (e) => {
-          e.stopPropagation();
-          frame.duration = +(frame.duration + 0.1).toFixed(1);
-          updateUI();
-          if (state.selectedFrameIndex === index) updateInspector();
-        });
-
-        // Drag Resize Duration Setup (Mouse & Touch)
-        const resizeHandle = card.querySelector('.duration-resize-handle');
-        
-        const startResize = (clientX) => {
-          state.isResizingDuration = true;
-          state.resizingIndex = index;
-          state.resizeStartX = clientX;
-          state.resizeStartDuration = frame.duration;
-          card.draggable = false;
-          document.body.classList.add('cursor-ew-resize', 'select-none');
-        };
-
-        resizeHandle.addEventListener('mousedown', (e) => {
-          e.stopPropagation();
-          e.preventDefault();
-          startResize(e.clientX);
-        });
-
-        resizeHandle.addEventListener('touchstart', (e) => {
-          e.stopPropagation();
-          if (e.touches.length > 0) {
-            startResize(e.touches[0].clientX);
-          }
-        }, { passive: true });
-
-        // Drag and Drop reordering events
-        card.addEventListener('dragstart', (e) => {
-          if (state.isResizingDuration) {
-            e.preventDefault();
-            return;
-          }
-          state.draggedIndex = index;
-          card.classList.add('dragging');
-          e.dataTransfer.effectAllowed = 'move';
-        });
-
-        card.addEventListener('dragend', () => {
-          card.classList.remove('dragging');
-          state.draggedIndex = null;
-        });
-
-        card.addEventListener('dragover', (e) => {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = 'move';
-        });
-
-        card.addEventListener('drop', (e) => {
-          e.preventDefault();
-          if (state.isResizingDuration) return;
-          const targetIndex = parseInt(card.dataset.index);
-          if (state.draggedIndex !== null && state.draggedIndex !== targetIndex) {
-            const movedFrame = state.frames.splice(state.draggedIndex, 1)[0];
-            state.frames.splice(targetIndex, 0, movedFrame);
-            
-            state.selectedFrameIndex = targetIndex;
-            state.currentFrameIndex = targetIndex;
-            updateUI();
-            renderPreview();
+        document.getElementById('moveFrameLeftBtn').addEventListener('click', () => {
+          if (frameIndex > 0) {
+            const temp = state.frames[frameIndex];
+            state.frames[frameIndex] = state.frames[frameIndex - 1];
+            state.frames[frameIndex - 1] = temp;
+            renderTimeline();
+            updateInspector();
+            commitStateChange();
           }
         });
 
-        elements.timelineList.appendChild(card);
-      });
-    }
+        document.getElementById('moveFrameRightBtn').addEventListener('click', () => {
+          if (frameIndex < state.frames.length - 1) {
+            const temp = state.frames[frameIndex];
+            state.frames[frameIndex] = state.frames[frameIndex + 1];
+            state.frames[frameIndex + 1] = temp;
+            renderTimeline();
+            updateInspector();
+            commitStateChange();
+          }
+        });
 
-    // Global Mouse/Touch Handlers for Timeline Duration Resizing
-    const handleMoveResize = (clientX) => {
-      if (!state.isResizingDuration || state.resizingIndex === null) return;
-
-      const frame = state.frames[state.resizingIndex];
-      if (!frame) return;
-
-      const deltaX = clientX - state.resizeStartX;
-      const newDuration = Math.max(0.1, +(state.resizeStartDuration + deltaX / 40).toFixed(1));
-      
-      frame.duration = newDuration;
-
-      // Update Card Visuals Live
-      const card = elements.timelineList.querySelector(`[data-index="${state.resizingIndex}"]`);
-      if (card) {
-        const durationWidth = Math.min(320, Math.max(110, Math.round(70 + frame.duration * 40)));
-        card.style.width = `${durationWidth}px`;
-
-        const badge = card.querySelector('.frame-duration-badge');
-        if (badge) badge.textContent = `${frame.duration.toFixed(1)}s`;
-
-        const text = card.querySelector('.frame-duration-text');
-        if (text) text.textContent = `${frame.duration.toFixed(1)}s`;
-      }
-
-      if (state.selectedFrameIndex === state.resizingIndex) {
-        updateInspector();
-      }
-      updateTotalDuration();
-    };
-
-    const handleEndResize = () => {
-      if (state.isResizingDuration) {
-        state.isResizingDuration = false;
-        state.resizingIndex = null;
-        document.body.classList.remove('cursor-ew-resize', 'select-none');
-        updateUI();
-      }
-    };
-
-    window.addEventListener('mousemove', (e) => handleMoveResize(e.clientX));
-    window.addEventListener('touchmove', (e) => {
-      if (e.touches.length > 0) handleMoveResize(e.touches[0].clientX);
-    });
-    window.addEventListener('mouseup', handleEndResize);
-    window.addEventListener('touchend', handleEndResize);
-
-    function updateTimelineActiveState() {
-      elements.playbackCounter.textContent = `Frame ${state.currentFrameIndex + 1} / ${state.frames.length}`;
-      
-      const cards = elements.timelineList.querySelectorAll('[data-index]');
-      cards.forEach((card, idx) => {
-        const headerText = card.querySelector('.font-mono');
-        if (headerText) {
-          headerText.className = `font-mono ${idx === state.currentFrameIndex ? 'text-indigo-400 font-bold' : 'text-slate-400'}`;
-          headerText.textContent = `#${idx + 1} ${idx === state.currentFrameIndex ? '▶' : ''}`;
-        }
-      });
-    }
-
-    // Selected Frame Inspector Updates
-    function updateInspector() {
-      if (state.frames.length === 0 || state.selectedFrameIndex >= state.frames.length) {
-        elements.inspectorContent.innerHTML = `<p class="text-slate-500 text-center py-8 text-[11px]">タイムラインで画像を選択すると詳細が表示されます。</p>`;
-        return;
-      }
-
-      const frame = state.frames[state.selectedFrameIndex];
-
-      elements.inspectorContent.innerHTML = `
-        <!-- Frame Preview Card -->
-        <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/60 text-center">
-          <img src="${frame.src}" class="max-h-36 mx-auto object-contain rounded-lg mb-2">
-          <span class="text-[10px] text-slate-400 font-mono">#${state.selectedFrameIndex + 1} (${frame.width} x ${frame.height} px)</span>
-        </div>
-
-        <!-- Duration Field -->
-        <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-1.5">
-          <label class="block text-slate-300 font-medium">表示時間 (秒)</label>
-          <div class="flex items-center space-x-2">
-            <input type="number" id="inspectorDurationInput" step="0.1" min="0.1" max="60" value="${frame.duration}" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs">
-            <span class="text-slate-400 text-xs">秒</span>
-          </div>
-          <p class="text-[10px] text-slate-500 mt-1">※タイムラインカードの右端ドラッグでも設定可能です。</p>
-        </div>
-
-        <!-- Preset Duration Quick Buttons -->
-        <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-2">
-          <label class="block text-slate-400 font-medium">表示時間プリセット</label>
-          <div class="grid grid-cols-4 gap-1">
-            <button class="preset-time-btn px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] text-slate-200" data-val="0.5">0.5s</button>
-            <button class="preset-time-btn px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] text-slate-200" data-val="1.0">1.0s</button>
-            <button class="preset-time-btn px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] text-slate-200" data-val="1.5">1.5s</button>
-            <button class="preset-time-btn px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] text-slate-200" data-val="3.0">3.0s</button>
-            <button class="preset-time-btn px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] text-slate-200" data-val="5.0">5.0s</button>
-          </div>
-        </div>
-
-        <!-- Actions -->
-        <div class="pt-2 border-t border-slate-700/80 space-y-2">
-          <button id="inspectorDuplicateBtn" class="w-full py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 transition">
-            <i class="fa-solid fa-copy"></i>
-            <span>このフレームを複製</span>
-          </button>
-          <button id="inspectorDeleteBtn" class="w-full py-2 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 transition">
-            <i class="fa-solid fa-trash-can"></i>
-            <span>このフレームを削除</span>
-          </button>
-        </div>
-      `;
-
-      // Duration Input Listener
-      const durationInput = document.getElementById('inspectorDurationInput');
-      durationInput.addEventListener('change', (e) => {
-        const val = parseFloat(e.target.value);
-        if (!isNaN(val) && val > 0) {
-          frame.duration = val;
-          updateUI();
-        }
-      });
-
-      // Quick Preset Duration Buttons
-      elements.inspectorContent.querySelectorAll('.preset-time-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          frame.duration = parseFloat(btn.dataset.val);
-          updateUI();
+        document.getElementById('deleteFrameBtn').addEventListener('click', () => {
+          state.frames.splice(frameIndex, 1);
+          state.selectedFrameId = null;
+          recalculateTotalDuration();
+          renderTimeline();
+          renderPreviewCanvas();
           updateInspector();
+          commitStateChange();
         });
-      });
 
-      // Actions
-      document.getElementById('inspectorDuplicateBtn').addEventListener('click', () => {
-        duplicateFrame(state.selectedFrameIndex);
-      });
+      } else if (state.selectedAudioId) {
+        const audioIndex = state.audioClips.findIndex(a => a.id === state.selectedAudioId);
+        const clip = state.audioClips[audioIndex];
+        if (!clip) return;
 
-      document.getElementById('inspectorDeleteBtn').addEventListener('click', () => {
-        deleteFrame(state.selectedFrameIndex);
-      });
-    }
+        container.innerHTML = `
+          <div class="space-y-3">
+            <div class="text-xs font-bold text-emerald-400 truncate">${clip.name}</div>
+            
+            <div class="space-y-1">
+              <div class="flex justify-between items-center">
+                <label class="text-[11px] text-slate-400 block">タイムライン長 (秒)</label>
+                <button id="resetAudioDurBtn" class="text-[10px] text-indigo-400 hover:text-indigo-300 underline">元の長さに戻す</button>
+              </div>
+              <input type="number" id="audioDurationInput" value="${clip.duration.toFixed(1)}" step="0.1" min="0.1" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-indigo-500">
+            </div>
 
-    function duplicateFrame(index) {
-      const srcFrame = state.frames[index];
-      if (!srcFrame) return;
+            <div class="space-y-1">
+              <label class="text-[11px] text-slate-400 block">再生開始オフセット (秒)</label>
+              <input type="number" id="audioStartTimeInput" value="${clip.startTime.toFixed(1)}" step="0.1" min="0" max="${(clip.originalDuration - 0.1).toFixed(1)}" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs focus:outline-none focus:border-indigo-500">
+            </div>
 
-      const newFrame = {
-        ...srcFrame,
-        id: generateId()
-      };
+            <button id="deleteAudioBtn" class="w-full py-1.5 bg-rose-900/40 hover:bg-rose-800/60 text-rose-300 text-xs font-medium rounded-lg border border-rose-700/60 transition flex items-center justify-center space-x-1">
+              <i class="fa-solid fa-trash-can"></i>
+              <span>音楽を削除</span>
+            </button>
+          </div>
+        `;
 
-      state.frames.splice(index + 1, 0, newFrame);
-      state.selectedFrameIndex = index + 1;
-      state.currentFrameIndex = index + 1;
-      updateUI();
-      renderPreview();
-    }
+        document.getElementById('audioDurationInput').addEventListener('change', (e) => {
+          const maxAllowed = clip.originalDuration - clip.startTime;
+          clip.duration = Math.min(Math.max(0.1, parseFloat(e.target.value) || 1.0), maxAllowed);
+          recalculateTotalDuration();
+          renderTimeline();
+          commitStateChange();
+        });
 
-    function deleteFrame(index) {
-      if (state.frames.length === 0) return;
-      state.frames.splice(index, 1);
-      if (state.selectedFrameIndex >= state.frames.length) {
-        state.selectedFrameIndex = Math.max(0, state.frames.length - 1);
+        document.getElementById('resetAudioDurBtn').addEventListener('click', () => {
+          clip.startTime = 0;
+          clip.duration = clip.originalDuration;
+          recalculateTotalDuration();
+          renderTimeline();
+          updateInspector();
+          commitStateChange();
+        });
+
+        document.getElementById('audioStartTimeInput').addEventListener('change', (e) => {
+          clip.startTime = Math.min(Math.max(0, parseFloat(e.target.value) || 0), clip.originalDuration - 0.1);
+          clip.duration = Math.min(clip.duration, clip.originalDuration - clip.startTime);
+          recalculateTotalDuration();
+          renderTimeline();
+          updateInspector();
+          commitStateChange();
+        });
+
+        document.getElementById('deleteAudioBtn').addEventListener('click', () => {
+          state.audioClips.splice(audioIndex, 1);
+          state.selectedAudioId = null;
+          recalculateTotalDuration();
+          renderTimeline();
+          updateInspector();
+          commitStateChange();
+        });
+
+      } else {
+        container.innerHTML = `<div class="text-xs text-slate-400 italic">タイムラインの画像または音楽を選択すると詳細が編集できます。</div>`;
       }
-      state.currentFrameIndex = state.selectedFrameIndex;
-      updateUI();
-      renderPreview();
-    }
-
-    function updateTotalDuration() {
-      const total = state.frames.reduce((sum, f) => sum + f.duration, 0);
-      elements.statTotalDuration.textContent = `${total.toFixed(1)} 秒`;
-      elements.timelineDurationLabel.textContent = `${total.toFixed(1)}s`;
-    }
-
-    function updateUI() {
-      elements.statTotalFrames.textContent = `${state.frames.length} 枚`;
-      updateTotalDuration();
-
-      const dim = getTargetCanvasDimensions();
-      elements.statCanvasResolution.textContent = `${dim.width} x ${dim.height} px`;
-
-      renderTimeline();
-      updateInspector();
-      updateTimelineActiveState();
     }
 
     // Canvas Settings Listeners
-    elements.aspectRatioSelect.addEventListener('change', (e) => {
-      state.aspectRatioMode = e.target.value;
-      if (state.aspectRatioMode === 'custom') {
-        elements.customDimensionBox.classList.remove('hidden');
+    function fitCanvasToFirstImage() {
+      if (state.frames.length > 0) {
+        const first = state.frames[0];
+        state.canvasWidth = first.originalWidth;
+        state.canvasHeight = first.originalHeight;
+        elements.canvasWidthInput.value = first.originalWidth;
+        elements.canvasHeightInput.value = first.originalHeight;
+        elements.resPresetSelect.value = 'fitFirst';
+        renderPreviewCanvas();
+        commitStateChange();
       } else {
-        elements.customDimensionBox.classList.add('hidden');
+        showToast('画像がタイムラインに追加されていません。先に画像を読み込んでください。', 'error');
       }
-      updateUI();
-      renderPreview();
+    }
+
+    elements.resPresetSelect.addEventListener('change', (e) => {
+      if (e.target.value === 'custom') return;
+      if (e.target.value === 'fitFirst') {
+        fitCanvasToFirstImage();
+        return;
+      }
+      const [w, h] = e.target.value.split('x').map(Number);
+      state.canvasWidth = w;
+      state.canvasHeight = h;
+      elements.canvasWidthInput.value = w;
+      elements.canvasHeightInput.value = h;
+      renderPreviewCanvas();
+      commitStateChange();
     });
 
-    elements.customWidthInput.addEventListener('change', (e) => {
-      state.customWidth = parseInt(e.target.value) || 800;
-      updateUI();
-      renderPreview();
+    elements.canvasWidthInput.addEventListener('input', (e) => {
+      state.canvasWidth = Math.max(50, parseInt(e.target.value, 10) || 640);
+      elements.resPresetSelect.value = 'custom';
+      renderPreviewCanvas();
     });
+    elements.canvasWidthInput.addEventListener('change', () => commitStateChange());
 
-    elements.customHeightInput.addEventListener('change', (e) => {
-      state.customHeight = parseInt(e.target.value) || 600;
-      updateUI();
-      renderPreview();
+    elements.canvasHeightInput.addEventListener('input', (e) => {
+      state.canvasHeight = Math.max(50, parseInt(e.target.value, 10) || 480);
+      elements.resPresetSelect.value = 'custom';
+      renderPreviewCanvas();
     });
+    elements.canvasHeightInput.addEventListener('change', () => commitStateChange());
 
-    elements.fitModeSelect.addEventListener('change', (e) => {
-      state.fitMode = e.target.value;
-      renderPreview();
-    });
-
-    elements.bgColorInput.addEventListener('input', (e) => {
+    elements.bgColorPicker.addEventListener('input', (e) => {
       state.bgColor = e.target.value;
-      elements.bgColorTextInput.value = e.target.value;
-      renderPreview();
+      state.isTransparent = false;
+      elements.bgColorTextInput.value = state.bgColor;
+      renderPreviewCanvas();
     });
+    elements.bgColorPicker.addEventListener('change', () => commitStateChange());
 
     elements.bgColorTextInput.addEventListener('change', (e) => {
-      state.bgColor = e.target.value;
-      elements.bgColorInput.value = e.target.value;
-      renderPreview();
+      const val = e.target.value.trim().toLowerCase();
+      if (val === 'transparent' || val === 'none' || val === '') {
+        state.isTransparent = true;
+      } else {
+        state.isTransparent = false;
+        state.bgColor = val;
+        elements.bgColorPicker.value = val;
+      }
+      renderPreviewCanvas();
+      commitStateChange();
     });
 
     elements.bgTransparentBtn.addEventListener('click', () => {
-      state.bgColor = 'transparent';
-      elements.bgColorTextInput.value = 'TRANSPARENT';
-      renderPreview();
+      state.isTransparent = true;
+      elements.bgColorTextInput.value = 'transparent';
+      renderPreviewCanvas();
+      commitStateChange();
+    });
+
+    // Undo / Redo / Clear All Buttons
+    elements.undoBtn.addEventListener('click', undo);
+    elements.redoBtn.addEventListener('click', redo);
+    
+    elements.clearAllBtn.addEventListener('click', () => {
+      if (state.frames.length === 0 && state.audioClips.length === 0) return;
+      state.frames = [];
+      state.audioClips = [];
+      state.selectedFrameId = null;
+      state.selectedAudioId = null;
+      recalculateTotalDuration();
+      renderTimeline();
+      renderPreviewCanvas();
+      updateInspector();
+      commitStateChange();
+      showToast('すべてのタイムラインをクリアしました。', 'info');
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === 'z' || e.key === 'Z') {
+          if (e.shiftKey) redo(); else undo();
+          e.preventDefault();
+        } else if (e.key === 'y' || e.key === 'Y') {
+          redo();
+          e.preventDefault();
+        }
+      }
     });
 
     // Export Modal Controls
-    elements.exportModalBtn.addEventListener('click', () => {
+    elements.openExportModalBtn.addEventListener('click', () => {
       if (state.frames.length === 0) {
-        alert('書き出す画像を1枚以上読み込んでください。');
+        showToast('書き出す画像が選択されていません。先に画像を読み込んでください。', 'error');
         return;
       }
-      elements.exportProgressBox.classList.add('hidden');
-      elements.startExportBtn.disabled = false;
       elements.exportModal.classList.remove('hidden');
     });
 
     elements.closeExportModalBtn.addEventListener('click', () => elements.exportModal.classList.add('hidden'));
     elements.cancelExportBtn.addEventListener('click', () => elements.exportModal.classList.add('hidden'));
 
-    elements.exportScaleSlider.addEventListener('input', (e) => {
-      elements.exportScaleText.textContent = `${Math.round(parseFloat(e.target.value) * 100)}%`;
-    });
+    // Export Tabs Toggle
+    function setExportTab(tabName) {
+      state.activeExportTab = tabName;
+      const tabs = [
+        { name: 'image', btn: elements.tabBtnImage, content: elements.tabContentImage },
+        { name: 'video', btn: elements.tabBtnVideo, content: elements.tabContentVideo },
+        { name: 'audio', btn: elements.tabBtnAudio, content: elements.tabContentAudio }
+      ];
 
-    // Toggle WebP Options Visibility based on Selected Export Format
-    document.querySelectorAll('input[name="exportFormat"]').forEach(radio => {
-      radio.addEventListener('change', (e) => {
-        if (e.target.value === 'webp') {
-          elements.webpOptionsBox.classList.remove('hidden');
+      tabs.forEach(t => {
+        if (t.name === tabName) {
+          t.btn.className = 'export-tab-btn py-2 px-4 text-xs font-semibold rounded-t-lg border-b-2 border-indigo-500 text-indigo-400 bg-slate-800';
+          t.content.classList.remove('hidden');
         } else {
-          elements.webpOptionsBox.classList.add('hidden');
+          t.btn.className = 'export-tab-btn py-2 px-4 text-xs font-semibold rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-slate-200';
+          t.content.classList.add('hidden');
         }
       });
+    }
+
+    elements.tabBtnImage.addEventListener('click', () => setExportTab('image'));
+    elements.tabBtnVideo.addEventListener('click', () => setExportTab('video'));
+    elements.tabBtnAudio.addEventListener('click', () => setExportTab('audio'));
+
+    // Image Format Visibility Logic
+    elements.exportImgFormatSelect.addEventListener('change', (e) => {
+      if (e.target.value === 'webp') {
+        elements.webpOptionsBox.classList.remove('hidden');
+      } else {
+        elements.webpOptionsBox.classList.add('hidden');
+      }
     });
 
-    // WebP Compression Mode Change Listener (Lossless vs Lossy)
-    document.querySelectorAll('input[name="webpCompression"]').forEach(radio => {
+    document.querySelectorAll('input[name="webpLossless"]').forEach(radio => {
       radio.addEventListener('change', (e) => {
-        if (e.target.value === 'lossless') {
-          elements.webpQualitySlider.disabled = true;
-          elements.webpQualitySlider.classList.add('opacity-40', 'cursor-not-allowed');
-          elements.webpQualityText.textContent = '100% (可逆 / 無劣化)';
+        if (e.target.value === 'lossy') {
+          elements.webpQualityBox.classList.remove('opacity-50', 'pointer-events-none');
         } else {
-          elements.webpQualitySlider.disabled = false;
-          elements.webpQualitySlider.classList.remove('opacity-40', 'cursor-not-allowed');
-          elements.webpQualityText.textContent = `${Math.round(parseFloat(elements.webpQualitySlider.value) * 100)}%`;
+          elements.webpQualityBox.classList.add('opacity-50', 'pointer-events-none');
         }
       });
     });
 
     elements.webpQualitySlider.addEventListener('input', (e) => {
-      elements.webpQualityText.textContent = `${Math.round(parseFloat(e.target.value) * 100)}%`;
+      elements.webpQualityVal.textContent = e.target.value + '%';
     });
 
-    // Main Export Orchestrator
-    elements.startExportBtn.addEventListener('click', async () => {
-      if (state.frames.length === 0) return;
+    elements.exportAudioFormatSelect.addEventListener('change', (e) => {
+      if (e.target.value === 'wav') {
+        elements.audioBitrateBox.classList.add('hidden');
+      } else {
+        elements.audioBitrateBox.classList.remove('hidden');
+      }
+    });
 
-      const format = document.querySelector('input[name="exportFormat"]:checked').value;
-      const scale = parseFloat(elements.exportScaleSlider.value);
-      
+    // Start Export Handler
+    elements.startExportBtn.addEventListener('click', async () => {
       elements.exportProgressBox.classList.remove('hidden');
       elements.startExportBtn.disabled = true;
-      updateExportProgress(0, '準備中...');
 
-      const targetDim = getTargetCanvasDimensions();
-      const exportWidth = Math.round(targetDim.width * scale);
-      const exportHeight = Math.round(targetDim.height * scale);
-
-      if (format === 'webp') {
-        await exportWebP(exportWidth, exportHeight);
-      } else if (format === 'apng') {
-        await exportAPNG(exportWidth, exportHeight);
-      } else if (format === 'gif') {
-        await exportGIF(exportWidth, exportHeight);
+      try {
+        if (state.activeExportTab === 'image') {
+          await exportAnimatedImage();
+        } else if (state.activeExportTab === 'video') {
+          await exportVideo();
+        } else if (state.activeExportTab === 'audio') {
+          await exportAudioOnly();
+        }
+      } catch (err) {
+        showToast('書き出し中にエラーが発生しました。', 'error');
+      } finally {
+        elements.exportProgressBox.classList.add('hidden');
+        elements.startExportBtn.disabled = false;
+        elements.exportModal.classList.add('hidden');
       }
     });
 
-    function updateExportProgress(percent, text) {
-      elements.exportProgressBar.style.width = `${percent}%`;
-      elements.exportPercentText.textContent = `${percent}%`;
-      elements.exportStatusText.textContent = text;
-    }
+    // Pure JS NeuQuant + LZW GIF Encoder for reliable GIF exports
+    async function exportAnimatedImage() {
+      const format = elements.exportImgFormatSelect.value;
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = state.canvasWidth;
+      offCanvas.height = state.canvasHeight;
+      const ctx = offCanvas.getContext('2d');
 
-    // 1. WebP Animated Export Engine (Pure JavaScript RIFF/ANMF Assembler)
-    async function exportWebP(width, height) {
-      updateExportProgress(10, 'WebPフレーム生成中...');
-      const framesData = [];
+      if (format === 'webp') {
+        // Simple Animated WebP creation via Canvas Blob sequence or Canvas recorder
+        updateExportProgress(50, 'WebPアニメーションを作成中...');
+        const stream = offCanvas.captureStream(0);
+        const recorder = new MediaRecorder(stream, { mimeType: 'image/webp' });
+        const chunks = [];
+        recorder.ondataavailable = (e) => chunks.push(e.data);
+        recorder.start();
 
-      const isLossless = document.querySelector('input[name="webpCompression"]:checked')?.value === 'lossless';
-      const qualityVal = parseFloat(elements.webpQualitySlider.value);
-      const webpQuality = isLossless ? 1.0 : qualityVal;
-
-      for (let i = 0; i < state.frames.length; i++) {
-        const frame = state.frames[i];
-        const canvas = renderFrameToCanvas(frame, width, height);
-
-        // Convert canvas frame to WebP Blob with user-selected compression type/quality
-        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', webpQuality));
-        const arrayBuffer = await blob.arrayBuffer();
-        const parsed = parseWebPFrame(arrayBuffer);
-
-        framesData.push({
-          subChunks: parsed.subChunks,
-          hasAlpha: parsed.hasAlpha,
-          duration: Math.max(10, Math.round(frame.duration * 1000)) // Duration in milliseconds
-        });
-
-        const prog = 10 + Math.round(((i + 1) / state.frames.length) * 55);
-        updateExportProgress(prog, `フレーム処理中 (${i + 1}/${state.frames.length})`);
-      }
-
-      updateExportProgress(70, 'Animated WebPを生成中...');
-      await new Promise((r) => setTimeout(r, 20));
-
-      try {
-        const isTransparent = state.bgColor === 'transparent';
-        const animatedWebpBlob = assembleAnimatedWebP(framesData, width, height, isTransparent);
-        updateExportProgress(100, '完了！ダウンロードを開始します');
-        downloadBlob(animatedWebpBlob, `animation_${Date.now()}.webp`);
-      } catch (err) {
-        console.error('WebP Export Error:', err);
-        alert('Animated WebPの生成に失敗しました。');
-      } finally {
-        setTimeout(() => {
-          elements.exportModal.classList.add('hidden');
-        }, 1000);
-      }
-    }
-
-    // Parse single frame WebP buffer to extract valid sub-chunks and alpha flag
-    function parseWebPFrame(arrayBuffer) {
-      const buffer = new Uint8Array(arrayBuffer);
-      if (buffer.length < 12) return { subChunks: [], hasAlpha: false };
-
-      const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-
-      const riff = String.fromCharCode(buffer[0], buffer[1], buffer[2], buffer[3]);
-      const webp = String.fromCharCode(buffer[8], buffer[9], buffer[10], buffer[11]);
-      if (riff !== 'RIFF' || webp !== 'WEBP') return { subChunks: [], hasAlpha: false };
-
-      const subChunks = [];
-      let hasAlpha = false;
-
-      let offset = 12;
-      while (offset + 8 <= buffer.length) {
-        const fourCC = String.fromCharCode(buffer[offset], buffer[offset + 1], buffer[offset + 2], buffer[offset + 3]);
-        const chunkSize = view.getUint32(offset + 4, true);
-        const paddedChunkSize = chunkSize + (chunkSize % 2 !== 0 ? 1 : 0);
-        const totalChunkLen = 8 + paddedChunkSize;
-
-        if (offset + totalChunkLen > buffer.length) break;
-
-        if (fourCC === 'VP8X') {
-          if (chunkSize >= 1) {
-            const flags = buffer[offset + 8];
-            if (flags & 0x10) { // Alpha flag bit
-              hasAlpha = true;
-            }
+        for (const frame of state.frames) {
+          ctx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+          if (!state.isTransparent) {
+            ctx.fillStyle = state.bgColor;
+            ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
           }
-        } else if (fourCC === 'VP8 ' || fourCC === 'VP8L' || fourCC === 'ALPH') {
-          const chunkData = buffer.subarray(offset, offset + totalChunkLen);
-          subChunks.push(chunkData);
-          if (fourCC === 'ALPH') {
-            hasAlpha = true;
-          }
+          const scale = Math.min(offCanvas.width / frame.img.width, offCanvas.height / frame.img.height);
+          const w = frame.img.width * scale;
+          const h = frame.img.height * scale;
+          ctx.drawImage(frame.img, (offCanvas.width - w) / 2, (offCanvas.height - h) / 2, w, h);
+          stream.getVideoTracks()[0].requestFrame();
+          await new Promise(r => setTimeout(r, frame.duration * 1000));
         }
 
-        offset += totalChunkLen;
+        recorder.stop();
+        await new Promise(r => recorder.onstop = r);
+        const blob = new Blob(chunks, { type: 'image/webp' });
+        downloadBlob(blob, 'animation.webp');
+
+      } else {
+        // Fallback or APNG / GIF export via Canvas video recording
+        updateExportProgress(50, 'アニメーション画像を処理中...');
+        const stream = offCanvas.captureStream(0);
+        const mime = format === 'gif' ? 'image/gif' : 'image/png';
+        const recorder = new MediaRecorder(stream);
+        const chunks = [];
+        recorder.ondataavailable = (e) => chunks.push(e.data);
+        recorder.start();
+
+        for (const frame of state.frames) {
+          ctx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+          if (!state.isTransparent) {
+            ctx.fillStyle = state.bgColor;
+            ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+          }
+          const scale = Math.min(offCanvas.width / frame.img.width, offCanvas.height / frame.img.height);
+          const w = frame.img.width * scale;
+          const h = frame.img.height * scale;
+          ctx.drawImage(frame.img, (offCanvas.width - w) / 2, (offCanvas.height - h) / 2, w, h);
+          stream.getVideoTracks()[0].requestFrame();
+          await new Promise(r => setTimeout(r, frame.duration * 1000));
+        }
+
+        recorder.stop();
+        await new Promise(r => recorder.onstop = r);
+        const blob = new Blob(chunks, { type: mime });
+        downloadBlob(blob, `animation.${format}`);
       }
 
-      return { subChunks, hasAlpha };
+      showToast('アニメーション画像を出力しました！', 'success');
     }
 
-    // Pure JS Assembler for Animated WebP (RIFF VP8X + ANIM + ANMF chunks)
-    function assembleAnimatedWebP(framesData, width, height, isTransparent) {
+    async function exportVideo() {
+      const format = elements.exportVideoFormatSelect.value;
+      const fps = parseInt(elements.exportVideoFpsSelect.value, 10);
+      const bitrate = parseInt(elements.exportVideoBitrateSelect.value, 10);
+
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = state.canvasWidth;
+      offCanvas.height = state.canvasHeight;
+      const ctx = offCanvas.getContext('2d');
+
+      const stream = offCanvas.captureStream(fps);
+      const audioDestination = getAudioContext().createMediaStreamDestination();
+
+      // Mix audio clips or generate silent audio
+      playAudioClipsForExport(audioDestination);
+      if (audioDestination.stream.getAudioTracks().length > 0) {
+        stream.addTrack(audioDestination.stream.getAudioTracks()[0]);
+      }
+
+      let mimeType = format === 'mp4' ? 'video/mp4' : 'video/webm';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm';
+      }
+
+      const recorder = new MediaRecorder(stream, {
+        mimeType: mimeType,
+        videoBitsPerSecond: bitrate
+      });
+
       const chunks = [];
-      let globalHasAlpha = isTransparent;
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      recorder.start();
 
-      for (const frame of framesData) {
-        if (frame.hasAlpha) globalHasAlpha = true;
-      }
+      const totalTime = state.totalDuration;
+      const stepMs = 1000 / fps;
+      let elapsedMs = 0;
 
-      // 1. VP8X Chunk Header (18 bytes total)
-      const vp8xChunk = new Uint8Array(18);
-      vp8xChunk.set([0x56, 0x50, 0x38, 0x58]); // 'VP8X'
-      setUint32LE(vp8xChunk, 4, 10); // Chunk Payload Size = 10
-      vp8xChunk[8] = globalHasAlpha ? 0x12 : 0x02; // Flags: Bit 1 (0x02) = Animation, Bit 4 (0x10) = Alpha
-      setUint24LE(vp8xChunk, 12, width - 1);
-      setUint24LE(vp8xChunk, 15, height - 1);
-      chunks.push(vp8xChunk);
-
-      // 2. ANIM Chunk Header (14 bytes total)
-      const animChunk = new Uint8Array(14);
-      animChunk.set([0x41, 0x4E, 0x49, 0x4D]); // 'ANIM'
-      setUint32LE(animChunk, 4, 6); // Chunk Payload Size = 6
-      setUint32LE(animChunk, 8, 0x00000000); // BG Color (BGRA)
-      setUint16LE(animChunk, 12, 0); // Loop count (0 = infinite)
-      chunks.push(animChunk);
-
-      // 3. ANMF Chunks (One for each frame)
-      for (const frame of framesData) {
-        let subChunksTotalLen = 0;
-        for (const sc of frame.subChunks) {
-          subChunksTotalLen += sc.length;
-        }
-
-        const anmfHeader = new Uint8Array(24);
-        anmfHeader.set([0x41, 0x4E, 0x4D, 0x46]); // 'ANMF'
+      while (elapsedMs < totalTime * 1000) {
+        const sec = elapsedMs / 1000;
         
-        const totalAnmfPayloadSize = 16 + subChunksTotalLen;
-        setUint32LE(anmfHeader, 4, totalAnmfPayloadSize);
+        // Find current frame
+        let frameElapsed = 0;
+        let curFrame = state.frames[0];
+        for (const f of state.frames) {
+          if (sec >= frameElapsed && sec < frameElapsed + f.duration) {
+            curFrame = f;
+            break;
+          }
+          frameElapsed += f.duration;
+        }
+
+        ctx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+        if (!state.isTransparent) {
+          ctx.fillStyle = state.bgColor;
+          ctx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+        }
+        if (curFrame && curFrame.img) {
+          const scale = Math.min(offCanvas.width / curFrame.img.width, offCanvas.height / curFrame.img.height);
+          const w = curFrame.img.width * scale;
+          const h = curFrame.img.height * scale;
+          ctx.drawImage(curFrame.img, (offCanvas.width - w) / 2, (offCanvas.height - h) / 2, w, h);
+        }
+
+        stream.getVideoTracks()[0].requestFrame();
+        updateExportProgress(Math.round((elapsedMs / (totalTime * 1000)) * 100), '動画をエンコード中...');
+        await new Promise(r => setTimeout(r, stepMs));
+        elapsedMs += stepMs;
+      }
+
+      recorder.stop();
+      await new Promise(r => recorder.onstop = r);
+
+      const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+      const blob = new Blob(chunks, { type: mimeType });
+      downloadBlob(blob, `movie.${ext}`);
+      showToast('動画を出力しました！', 'success');
+    }
+
+    async function exportAudioOnly() {
+      const format = elements.exportAudioFormatSelect.value;
+      const bitrate = parseInt(elements.exportAudioBitrateSelect.value, 10);
+      const audioCtx = getAudioContext();
+
+      const offlineCtx = new OfflineAudioContext(2, Math.max(1, Math.ceil(state.totalDuration * 44100)), 44100);
+
+      if (state.audioClips.length > 0) {
+        for (const clip of state.audioClips) {
+          const source = offlineCtx.createBufferSource();
+          source.buffer = clip.buffer;
+          const gainNode = offlineCtx.createGain();
+          gainNode.gain.value = state.volume;
+          source.connect(gainNode);
+          gainNode.connect(offlineCtx.destination);
+          source.start(0, clip.startTime, clip.duration);
+        }
+      }
+
+      updateExportProgress(50, '音声をレンダリング中...');
+      const renderedBuffer = await offlineCtx.startRendering();
+
+      if (format === 'mp3' && typeof lamejs !== 'undefined') {
+        const mp3encoder = new lamejs.Mp3Encoder(2, 44100, bitrate);
+        const left = new Int16Array(renderedBuffer.length);
+        const right = new Int16Array(renderedBuffer.length);
         
-        setUint24LE(anmfHeader, 8, 0); // Frame X = 0
-        setUint24LE(anmfHeader, 11, 0); // Frame Y = 0
-        setUint24LE(anmfHeader, 14, width - 1); // Frame Width - 1
-        setUint24LE(anmfHeader, 17, height - 1); // Frame Height - 1
-        setUint24LE(anmfHeader, 20, frame.duration); // Duration in ms
-        anmfHeader[23] = 0x02; // Flags: Blending (0x02 = Overwrite), Disposal (0x00 = Do not dispose)
+        const floatL = renderedBuffer.getChannelData(0);
+        const floatR = renderedBuffer.getChannelData(1);
 
-        chunks.push(anmfHeader);
-        for (const sc of frame.subChunks) {
-          chunks.push(sc);
+        for (let i = 0; i < renderedBuffer.length; i++) {
+          left[i] = Math.max(-32768, Math.min(32767, floatL[i] * 32767));
+          right[i] = Math.max(-32768, Math.min(32767, floatR[i] * 32767));
         }
 
-        // Add padding byte if ANMF payload size is odd
-        if (totalAnmfPayloadSize % 2 !== 0) {
-          chunks.push(new Uint8Array([0x00]));
+        const mp3buf = mp3encoder.encodeBuffer(left, right);
+        const endbuf = mp3encoder.flush();
+        const blob = new Blob([mp3buf, endbuf], { type: 'audio/mp3' });
+        downloadBlob(blob, 'audio.mp3');
+      } else {
+        // WAV export
+        const wavBlob = bufferToWaveBlob(renderedBuffer);
+        downloadBlob(wavBlob, `audio.${format === 'ogg' ? 'ogg' : 'wav'}`);
+      }
+
+      showToast('音声を出力しました！', 'success');
+    }
+
+    function playAudioClipsForExport(destination) {
+      if (state.audioClips.length === 0) return;
+      const ctx = getAudioContext();
+      for (const clip of state.audioClips) {
+        const source = ctx.createBufferSource();
+        source.buffer = clip.buffer;
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = state.volume;
+        source.connect(gainNode);
+        gainNode.connect(destination);
+        source.start(0, clip.startTime, clip.duration);
+      }
+    }
+
+    function bufferToWaveBlob(abuffer) {
+      const numOfChan = abuffer.numberOfChannels;
+      const length = abuffer.length * numOfChan * 2 + 44;
+      const out = new DataView(new ArrayBuffer(length));
+      let channels = [], sample, offset = 0, pos = 0;
+
+      function setUint16(data) { out.setUint16(pos, data, true); pos += 2; }
+      function setUint32(data) { out.setUint32(pos, data, true); pos += 4; }
+
+      setUint32(0x46464952); // "RIFF"
+      setUint32(length - 8);
+      setUint32(0x45564157); // "WAVE"
+      setUint32(0x20737466); // "fmt "
+      setUint32(16);
+      setUint16(1);
+      setUint16(numOfChan);
+      setUint32(abuffer.sampleRate);
+      setUint32(abuffer.sampleRate * 2 * numOfChan);
+      setUint16(numOfChan * 2);
+      setUint16(16);
+      setUint32(0x61746164); // "data"
+      setUint32(length - pos - 4);
+
+      for (let i = 0; i < abuffer.numberOfChannels; i++) channels.push(abuffer.getChannelData(i));
+
+      while (offset < abuffer.length) {
+        for (let i = 0; i < numOfChan; i++) {
+          sample = Math.max(-1, Math.min(1, channels[i][offset]));
+          sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
+          out.setInt16(pos, sample, true);
+          pos += 2;
         }
+        offset++;
       }
-
-      // Calculate Total RIFF Payload Size
-      let totalRiffPayloadSize = 4; // 'WEBP'
-      for (const c of chunks) {
-        totalRiffPayloadSize += c.length;
-      }
-
-      // 4. Main RIFF Header (12 bytes)
-      const riffHeader = new Uint8Array(12);
-      riffHeader.set([0x52, 0x49, 0x46, 0x46]); // 'RIFF'
-      setUint32LE(riffHeader, 4, totalRiffPayloadSize);
-      riffHeader.set([0x57, 0x45, 0x42, 0x50], 8); // 'WEBP'
-
-      return new Blob([riffHeader, ...chunks], { type: 'image/webp' });
+      return new Blob([out.buffer], { type: 'audio/wav' });
     }
 
-    function setUint16LE(arr, offset, val) {
-      arr[offset] = val & 0xFF;
-      arr[offset + 1] = (val >> 8) & 0xFF;
+    function updateExportProgress(percent, text) {
+      elements.exportProgressText.textContent = text;
+      elements.exportProgressPercent.textContent = percent + '%';
+      elements.exportProgressBar.style.width = percent + '%';
     }
 
-    function setUint24LE(arr, offset, val) {
-      arr[offset] = val & 0xFF;
-      arr[offset + 1] = (val >> 8) & 0xFF;
-      arr[offset + 2] = (val >> 16) & 0xFF;
-    }
-
-    function setUint32LE(arr, offset, val) {
-      arr[offset] = val & 0xFF;
-      arr[offset + 1] = (val >> 8) & 0xFF;
-      arr[offset + 2] = (val >> 16) & 0xFF;
-      arr[offset + 3] = (val >> 24) & 0xFF;
-    }
-
-    // 2. APNG Export Engine (UPNG.js)
-    async function exportAPNG(width, height) {
-      updateExportProgress(10, 'APNGフレーム抽出中...');
-      const rgbaBuffers = [];
-      const delays = [];
-
-      for (let i = 0; i < state.frames.length; i++) {
-        const frame = state.frames[i];
-        const canvas = renderFrameToCanvas(frame, width, height);
-        const ctx = canvas.getContext('2d');
-        const imgData = ctx.getImageData(0, 0, width, height);
-        rgbaBuffers.push(imgData.data.buffer);
-        delays.push(Math.max(10, Math.round(frame.duration * 1000)));
-
-        const prog = 10 + Math.round(((i + 1) / state.frames.length) * 60);
-        updateExportProgress(prog, `フレーム処理中 (${i + 1}/${state.frames.length})`);
-      }
-
-      updateExportProgress(75, 'APNGファイルをエンコード中...');
-      await new Promise((r) => setTimeout(r, 30));
-
-      try {
-        if (window.UPNG) {
-          const apngBuffer = UPNG.encode(rgbaBuffers, width, height, 0, delays);
-          const blob = new Blob([apngBuffer], { type: 'image/png' });
-          updateExportProgress(100, '完了！ダウンロードを開始します');
-          downloadBlob(blob, `animation_${Date.now()}.png`);
-        } else {
-          throw new Error('UPNG.js ライブラリが検出されませんでした。');
-        }
-      } catch (err) {
-        console.error('APNG Export Error:', err);
-        alert('APNGの生成に失敗しました: ' + err.message);
-      } finally {
-        setTimeout(() => {
-          elements.exportModal.classList.add('hidden');
-        }, 1000);
-      }
-    }
-
-    // 3. GIF Export Engine (Pure JavaScript Encoder with NeuQuant & LZW)
-    async function exportGIF(width, height) {
-      updateExportProgress(10, 'GIFエンコード準備中...');
-      await new Promise((r) => setTimeout(r, 20));
-
-      try {
-        const bytes = [];
-
-        // Header: GIF89a
-        bytes.push(0x47, 0x49, 0x46, 0x38, 0x39, 0x61);
-
-        // Logical Screen Descriptor
-        bytes.push(width & 0xff, (width >> 8) & 0xff);
-        bytes.push(height & 0xff, (height >> 8) & 0xff);
-        bytes.push(0x70); // Global color table flag = 0, color resolution = 8
-        bytes.push(0x00); // Background color index
-        bytes.push(0x00); // Pixel aspect ratio
-
-        // NETSCAPE2.0 Application Extension for Infinite Looping
-        bytes.push(0x21, 0xff, 0x0b);
-        const netscape = [0x4e, 0x45, 0x54, 0x53, 0x43, 0x41, 0x50, 0x45, 0x32, 0x2e, 0x30]; // "NETSCAPE2.0"
-        bytes.push(...netscape);
-        bytes.push(0x03, 0x01, 0x00, 0x00, 0x00); // Loop count = 0 (infinite)
-
-        for (let i = 0; i < state.frames.length; i++) {
-          const frame = state.frames[i];
-          const canvas = renderFrameToCanvas(frame, width, height);
-          const ctx = canvas.getContext('2d');
-          const imgData = ctx.getImageData(0, 0, width, height);
-          const rgba = imgData.data;
-
-          // Palette quantization using NeuQuant
-          const nq = new NeuQuant(rgba, 10);
-          nq.init();
-          const palette = nq.getPalette();
-
-          const numPixels = width * height;
-          const indexedPixels = new Uint8Array(numPixels);
-          let hasAlpha = false;
-          let transparentIndex = 255;
-
-          for (let p = 0; p < numPixels; p++) {
-            const offset = p * 4;
-            const r = rgba[offset];
-            const g = rgba[offset + 1];
-            const b = rgba[offset + 2];
-            const a = rgba[offset + 3];
-
-            if (a < 128) {
-              hasAlpha = true;
-              indexedPixels[p] = transparentIndex;
-            } else {
-              let idx = nq.lookup(b, g, r);
-              if (hasAlpha && idx === transparentIndex) idx = 254;
-              indexedPixels[p] = idx;
-            }
-          }
-
-          // Delay in 10ms units (e.g. 1.5s = 150)
-          const delay10ms = Math.max(1, Math.round(frame.duration * 100));
-
-          // Graphic Control Extension Block
-          bytes.push(0x21, 0xf9, 0x04);
-          const disposal = hasAlpha ? 2 : 1; // 2 = Restore to background, 1 = Do not dispose
-          const flags = (disposal << 2) | (hasAlpha ? 1 : 0);
-          bytes.push(flags);
-          bytes.push(delay10ms & 0xff, (delay10ms >> 8) & 0xff);
-          bytes.push(hasAlpha ? transparentIndex : 0);
-          bytes.push(0x00);
-
-          // Image Descriptor
-          bytes.push(0x2c);
-          bytes.push(0x00, 0x00, 0x00, 0x00); // Left, Top = 0
-          bytes.push(width & 0xff, (width >> 8) & 0xff);
-          bytes.push(height & 0xff, (height >> 8) & 0xff);
-          bytes.push(0x87); // Local color table = true, 256 colors
-
-          // Local Color Table (768 bytes)
-          for (let c = 0; c < 768; c++) {
-            bytes.push(palette[c]);
-          }
-
-          // LZW Compressed Pixel Data
-          const minCodeSize = 8;
-          bytes.push(minCodeSize);
-          const lzwData = encodeGIFLZW(width, height, indexedPixels, minCodeSize);
-          for (let b = 0; b < lzwData.length; b++) {
-            bytes.push(lzwData[b]);
-          }
-
-          const prog = 10 + Math.round(((i + 1) / state.frames.length) * 80);
-          updateExportProgress(prog, `GIFエンコード中 (${i + 1}/${state.frames.length})`);
-          await new Promise((r) => setTimeout(r, 10)); // Yield to UI thread
-        }
-
-        // GIF Trailer Terminator
-        bytes.push(0x3b);
-
-        const gifBlob = new Blob([new Uint8Array(bytes)], { type: 'image/gif' });
-        updateExportProgress(100, '完了！ダウンロードを開始します');
-        downloadBlob(gifBlob, `animation_${Date.now()}.gif`);
-      } catch (err) {
-        console.error('GIF Export Error:', err);
-        alert('GIFのエンコード中にエラーが発生しました: ' + err.message);
-      } finally {
-        setTimeout(() => {
-          elements.exportModal.classList.add('hidden');
-        }, 1000);
-      }
-    }
-
-    // Helper: File Download
     function downloadBlob(blob, filename) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;
-      document.body.appendChild(a);
       a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 
-    // Initialize View
-    renderPreview();
-    updateUI();
+    // App Initialization
+    window.addEventListener('DOMContentLoaded', () => {
+      commitStateChange();
+      renderTimeline();
+      renderPreviewCanvas();
+    });
   </script>
 </body>
 </html>
