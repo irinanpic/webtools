@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="ja" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Interactive Blending</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+  <style>
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 5px;
+      border: 2px solid #0f172a;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* 透過プレビュー背景パターン */
+    .bg-checker {
+      background-color: #1e293b;
+      background-image: 
+        linear-gradient(45deg, #0f172a 25%, transparent 25%), 
+        linear-gradient(-45deg, #0f172a 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #0f172a 75%), 
+        linear-gradient(-45deg, transparent 75%, #0f172a 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased select-none bg-slate-900 text-slate-100">
+
+  <!-- Header -->
+  <header class="bg-slate-800/90 border-b border-slate-700/80 px-4 py-3 flex items-center justify-between shrink-0 shadow-md backdrop-blur z-20">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+        <i class="fa-solid fa-wand-magic-sparkles text-lg"></i>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold tracking-tight text-white leading-none">Interactive Blending</h1>
+        <p class="text-xs text-slate-400 mt-1">差分情報をもとになんかいい感じに馴染ませる</p>
+      </div>
+    </div>
+
+    <!-- Right Control Action Buttons -->
+    <div class="flex items-center space-x-2">
+      <button id="btnResetTransformHeader" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg transition border border-slate-600 flex items-center space-x-1.5">
+        <i class="fa-solid fa-arrows-rotate"></i>
+        <span>位置リセット</span>
+      </button>
+      <button id="downloadPngBtn" disabled class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white text-xs font-semibold rounded-lg shadow-md shadow-indigo-600/20 transition flex items-center space-x-1.5">
+        <i class="fa-solid fa-download"></i>
+        <span>PNG保存</span>
+      </button>
+      <button id="downloadWebpBtn" disabled class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white text-xs font-semibold rounded-lg shadow-md shadow-emerald-600/20 transition flex items-center space-x-1.5">
+        <i class="fa-solid fa-file-image"></i>
+        <span>WebP保存</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Application Body -->
+  <main class="flex-1 flex overflow-hidden relative">
+
+    <!-- Left Sidebar Controls -->
+    <aside class="w-full md:w-80 bg-slate-800/90 border-r border-slate-700/80 p-4 flex flex-col space-y-4 overflow-y-auto shrink-0 z-10">
+      
+      <!-- 1. 画像の読み込み -->
+      <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-3">
+        <div class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center">
+          <i class="fa-solid fa-folder-open mr-1.5 text-indigo-400"></i>
+          <span>1. 画像の読み込み</span>
+        </div>
+
+        <!-- Image A Dropzone -->
+        <div class="space-y-1">
+          <label class="text-[11px] text-slate-400 block font-medium">ベース画像 (画像A)</label>
+          <div id="dropzoneA" onclick="document.getElementById('fileA').click()" class="border-2 border-dashed border-slate-700 hover:border-indigo-500 bg-slate-800/50 hover:bg-slate-800/80 rounded-lg p-2.5 text-center cursor-pointer transition">
+            <span id="labelA" class="text-xs text-slate-400 break-all block">クリックまたはD&Dで選択</span>
+            <input type="file" id="fileA" accept="image/*" class="hidden">
+          </div>
+        </div>
+
+        <!-- Image B Dropzone -->
+        <div class="space-y-1">
+          <label class="text-[11px] text-slate-400 block font-medium">合成画像 (画像B)</label>
+          <div id="dropzoneB" onclick="document.getElementById('fileB').click()" class="border-2 border-dashed border-slate-700 hover:border-indigo-500 bg-slate-800/50 hover:bg-slate-800/80 rounded-lg p-2.5 text-center cursor-pointer transition">
+            <span id="labelB" class="text-xs text-slate-400 break-all block">クリックまたはD&Dで選択</span>
+            <input type="file" id="fileB" accept="image/*" class="hidden">
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 合成の実行 & モード管理 -->
+      <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-3">
+        <div class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center">
+          <i class="fa-solid fa-sliders mr-1.5 text-indigo-400"></i>
+          <span>2. 合成の実行</span>
+        </div>
+
+        <button id="btnBlend" disabled class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:hover:bg-indigo-600 text-white text-xs font-bold rounded-lg shadow-md shadow-indigo-600/20 transition flex items-center justify-center space-x-2">
+          <i class="fa-solid fa-bolt"></i>
+          <span>シームレス合成を実行</span>
+        </button>
+
+        <button id="btnReset" class="w-full py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg border border-slate-600 transition hidden flex items-center justify-center space-x-1.5">
+          <i class="fa-solid fa-vector-square"></i>
+          <span>配置・変形モードに戻す</span>
+        </button>
+      </div>
+
+      <!-- Image Info Label -->
+      <div class="mt-auto bg-slate-900/40 p-3 rounded-xl border border-slate-700/40 text-xs text-slate-400 space-y-1">
+        <div class="flex justify-between">
+          <span>画像A (Base):</span>
+          <span id="imgAInfoText" class="font-mono text-slate-200">未読み込み</span>
+        </div>
+        <div class="flex justify-between">
+          <span>画像B (Overlay):</span>
+          <span id="imgBInfoText" class="font-mono text-slate-200">未読み込み</span>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- Canvas Workspace Section -->
+    <section id="workspace" class="flex-1 relative bg-slate-950 flex overflow-auto p-8 select-none">
+
+      <!-- Drag and Drop Overlay for First Image (Base Image) -->
+      <div id="dropzoneMain" class="m-auto max-w-md w-full border-2 border-dashed border-slate-600 hover:border-indigo-500 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer transition-all bg-slate-800/40 hover:bg-slate-800/80 group">
+        <div class="w-16 h-16 rounded-full bg-slate-700/50 group-hover:bg-indigo-600/20 text-slate-400 group-hover:text-indigo-400 flex items-center justify-center text-2xl transition-all mb-4">
+          <i class="fa-solid fa-cloud-arrow-up"></i>
+        </div>
+        <h3 class="text-base font-bold text-slate-200 mb-1">ここにベース画像をドラッグ＆ドロップ</h3>
+        <p class="text-xs text-slate-400 mb-4">またはクリックして画像を選択（2回目以降は合成画像）</p>
+        <button class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg shadow-lg shadow-indigo-600/20 transition">
+          ベース画像を選択する
+        </button>
+      </div>
+
+      <!-- Status Indicator Badge (Top-Left Overlay) -->
+      <div id="statusBadge" class="absolute top-4 left-4 z-20 bg-slate-800/90 border border-slate-700/80 px-3 py-1.5 rounded-lg text-xs flex items-center space-x-2 backdrop-blur shadow-md hidden">
+        <span class="text-slate-400">ステータス:</span>
+        <span id="modeText" class="font-bold text-indigo-400">ベース画像読み込み済み</span>
+      </div>
+
+      <!-- Main Canvas Centered Wrapper in Scrollable Space -->
+      <div id="canvasCenterer" class="m-auto flex items-center justify-center hidden">
+        <div id="canvasWrapper" class="relative bg-checker shadow-2xl rounded-lg border border-slate-700/50">
+          <canvas id="mainCanvas" class="block cursor-crosshair"></canvas>
+        </div>
+      </div>
+
+      <!-- Instruction Overlay (Bottom Fixed) -->
+      <div id="instruction" class="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 bg-slate-800/90 border border-slate-700/80 px-4 py-1.5 rounded-full text-xs text-slate-300 shadow-xl backdrop-blur flex items-center space-x-2 pointer-events-none hidden">
+        <i class="fa-solid fa-circle-info text-indigo-400"></i>
+        <span id="instructionText">画像Bを読み込むかドラッグ＆ドロップしてください</span>
+      </div>
+
+      <!-- Floating View Zoom Controls (Top-Right Fixed Overlay) -->
+      <div id="zoomControls" class="fixed top-16 right-6 z-30 bg-slate-800/95 border border-slate-700/80 rounded-xl px-3 py-1.5 shadow-2xl backdrop-blur flex items-center space-x-2 hidden">
+        <button id="zoomOutBtn" title="縮小 (ホイール下)" class="w-7 h-7 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 rounded-lg text-slate-200 text-xs flex items-center justify-center transition">
+          <i class="fa-solid fa-minus"></i>
+        </button>
+        <span id="zoomPercentText" class="text-xs font-mono font-bold text-indigo-400 min-w-[55px] text-center">FIT</span>
+        <button id="zoomInBtn" title="拡大 (ホイール上)" class="w-7 h-7 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 rounded-lg text-slate-200 text-xs flex items-center justify-center transition">
+          <i class="fa-solid fa-plus"></i>
+        </button>
+        <div class="h-4 w-px bg-slate-700 mx-1"></div>
+        <button id="zoomResetBtn" title="100%等倍表示" class="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-200 text-[11px] font-semibold rounded-lg transition">
+          100%
+        </button>
+        <button id="zoomFitBtn" title="画面に合わせる" class="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-semibold rounded-lg transition">
+          フィット
+        </button>
+      </div>
+
+    </section>
+
+  </main>
+
+  <script>
+    const state = {
+      imgA: null,
+      imgB: null,
+      isBlending: false,
+      isBlended: false,
+      transform: { x: 60, y: 60, width: 220, height: 220 },
+      drag: { active: false, action: null, startX: 0, startY: 0, initTransform: null },
+      zoomLevel: 0 // 0: Auto-Fit
+    };
+
+    const canvas = document.getElementById('mainCanvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const HANDLE_SIZE = 12;
+
+    const workspace = document.getElementById('workspace');
+    const dropzoneMain = document.getElementById('dropzoneMain');
+    const canvasCenterer = document.getElementById('canvasCenterer');
+    const statusBadge = document.getElementById('statusBadge');
+    const instruction = document.getElementById('instruction');
+    const instructionText = document.getElementById('instructionText');
+    const zoomControls = document.getElementById('zoomControls');
+    const imgAInfoText = document.getElementById('imgAInfoText');
+    const imgBInfoText = document.getElementById('imgBInfoText');
+
+    const btnBlend = document.getElementById('btnBlend');
+    const downloadPngBtn = document.getElementById('downloadPngBtn');
+    const downloadWebpBtn = document.getElementById('downloadWebpBtn');
+
+    function loadFileAsImage(file, target) {
+      if (!file || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const img = new Image();
+        img.onload = () => {
+          if (target === 'A') {
+            state.imgA = img;
+            document.getElementById('labelA').textContent = file.name;
+            imgAInfoText.textContent = `${img.width} × ${img.height} px`;
+            
+            // UI切替: 初回ベース画像読み込み時
+            dropzoneMain.classList.add('hidden');
+            canvasCenterer.classList.remove('hidden');
+            statusBadge.classList.remove('hidden');
+            instruction.classList.remove('hidden');
+            zoomControls.classList.remove('hidden');
+          } else {
+            state.imgB = img;
+            document.getElementById('labelB').textContent = file.name;
+            imgBInfoText.textContent = `${img.width} × ${img.height} px`;
+          }
+
+          resetTransform();
+          state.isBlended = false;
+          document.getElementById('btnReset').classList.add('hidden');
+          downloadPngBtn.disabled = true;
+          downloadWebpBtn.disabled = true;
+          
+          const modeText = document.getElementById('modeText');
+          if (state.imgA && state.imgB) {
+            modeText.textContent = '配置・変形中';
+            modeText.className = 'font-bold text-indigo-400';
+            instructionText.textContent = '画像Bをドラッグ移動 / 四隅ハンドルで変形して「シームレス合成を実行」';
+            btnBlend.disabled = false;
+          } else {
+            modeText.textContent = 'ベース画像読み込み完了';
+            modeText.className = 'font-bold text-sky-400';
+            instructionText.textContent = '合成画像 (画像B) を読み込むか画面上にドラッグ＆ドロップしてください';
+            btnBlend.disabled = true;
+          }
+
+          setZoom(0);
+          render();
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function handleGeneralDrop(file) {
+      if (!state.imgA) {
+        loadFileAsImage(file, 'A');
+      } else {
+        loadFileAsImage(file, 'B');
+      }
+    }
+
+    function setupDropzone(element, onDropFile) {
+      ['dragenter', 'dragover'].forEach(name => {
+        element.addEventListener(name, (e) => {
+          e.preventDefault(); e.stopPropagation();
+          element.classList.add('border-indigo-500');
+        });
+      });
+      ['dragleave', 'drop'].forEach(name => {
+        element.addEventListener(name, (e) => {
+          e.preventDefault(); e.stopPropagation();
+          element.classList.remove('border-indigo-500');
+        });
+      });
+      element.addEventListener('drop', (e) => {
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          onDropFile(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    dropzoneMain.addEventListener('click', () => {
+      if (!state.imgA) {
+        document.getElementById('fileA').click();
+      } else {
+        document.getElementById('fileB').click();
+      }
+    });
+
+    setupDropzone(document.getElementById('dropzoneA'), (file) => loadFileAsImage(file, 'A'));
+    setupDropzone(document.getElementById('dropzoneB'), (file) => loadFileAsImage(file, 'B'));
+    setupDropzone(workspace, (file) => handleGeneralDrop(file));
+
+    window.addEventListener('dragover', (e) => e.preventDefault());
+    window.addEventListener('drop', (e) => e.preventDefault());
+
+    function resetTransform() {
+      if (!state.imgA) return;
+      canvas.width = state.imgA.width;
+      canvas.height = state.imgA.height;
+      if (!state.imgB) return;
+      const aspect = state.imgB.width / state.imgB.height;
+      const targetW = Math.min(state.imgA.width * 0.45, state.imgB.width);
+      const targetH = targetW / aspect;
+      state.transform = {
+        x: Math.round((state.imgA.width - targetW) / 2),
+        y: Math.round((state.imgA.height - targetH) / 2),
+        width: Math.round(targetW),
+        height: Math.round(targetH)
+      };
+    }
+
+    function render() {
+      if (!state.imgA) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(state.imgA, 0, 0);
+
+      if (state.imgB && !state.isBlended) {
+        const { x, y, width, height } = state.transform;
+        ctx.drawImage(state.imgB, x, y, width, height);
+
+        // Bounding Box
+        ctx.strokeStyle = '#6366f1';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([6, 6]);
+        ctx.strokeRect(x, y, width, height);
+        ctx.setLineDash([]);
+
+        // Handle Drawing
+        const handles = getHandles();
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#4338ca';
+        ctx.lineWidth = 2;
+        for (const [key, h] of Object.entries(handles)) {
+          ctx.beginPath();
+          ctx.arc(h.x, h.y, HANDLE_SIZE / 2, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+      }
+    }
+
+    function getHandles() {
+      const { x, y, width: w, height: h } = state.transform;
+      return {
+        nw: { x: x, y: y }, ne: { x: x + w, y: y },
+        se: { x: x + w, y: y + h }, sw: { x: x, y: y + h }
+      };
+    }
+
+    function getCanvasCoords(e) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left) * (canvas.width / rect.width),
+        y: (e.clientY - rect.top) * (canvas.height / rect.height)
+      };
+    }
+
+    function hitTest(mx, my) {
+      const handles = getHandles();
+      for (const [key, h] of Object.entries(handles)) {
+        if (Math.hypot(mx - h.x, my - h.y) <= HANDLE_SIZE) return key;
+      }
+      const { x, y, width: w, height: h } = state.transform;
+      if (mx >= x && mx <= x + w && my >= y && my <= y + h) return 'move';
+      return null;
+    }
+
+    canvas.addEventListener('mousedown', (e) => {
+      if (state.isBlended || !state.imgB) return;
+      const { x, y } = getCanvasCoords(e);
+      const action = hitTest(x, y);
+      if (action) {
+        state.drag = { 
+          active: true, 
+          action: action, 
+          startX: x, 
+          startY: y, 
+          initTransform: { ...state.transform },
+          aspect: state.transform.width / state.transform.height
+        };
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!state.drag.active) return;
+      const { x, y } = getCanvasCoords(e);
+      const dx = x - state.drag.startX;
+      const dy = y - state.drag.startY;
+      const t = state.drag.initTransform;
+      const aspect = state.drag.aspect;
+
+      if (state.drag.action === 'move') {
+        state.transform.x = Math.round(t.x + dx);
+        state.transform.y = Math.round(t.y + dy);
+      } else if (state.drag.action === 'se') {
+        let newW = Math.max(20, t.width + dx);
+        let newH = newW / aspect;
+        state.transform.width = Math.round(newW);
+        state.transform.height = Math.round(newH);
+      } else if (state.drag.action === 'sw') {
+        let newW = Math.max(20, t.width - dx);
+        let newH = newW / aspect;
+        state.transform.x = Math.round(t.x + (t.width - newW));
+        state.transform.width = Math.round(newW);
+        state.transform.height = Math.round(newH);
+      } else if (state.drag.action === 'ne') {
+        let newW = Math.max(20, t.width + dx);
+        let newH = newW / aspect;
+        state.transform.y = Math.round(t.y + (t.height - newH));
+        state.transform.width = Math.round(newW);
+        state.transform.height = Math.round(newH);
+      } else if (state.drag.action === 'nw') {
+        let newW = Math.max(20, t.width - dx);
+        let newH = newW / aspect;
+        state.transform.x = Math.round(t.x + (t.width - newW));
+        state.transform.y = Math.round(t.y + (t.height - newH));
+        state.transform.width = Math.round(newW);
+        state.transform.height = Math.round(newH);
+      }
+      render();
+    });
+
+    window.addEventListener('mouseup', () => { state.drag.active = false; });
+
+    function setZoom(level) {
+      if (!state.imgA) return;
+      state.zoomLevel = level;
+
+      if (state.zoomLevel === 0) {
+        const wsW = workspace.clientWidth - 64;
+        const wsH = workspace.clientHeight - 64;
+        const scale = Math.min(wsW / state.imgA.width, wsH / state.imgA.height, 1.0);
+        
+        canvas.style.width = Math.round(state.imgA.width * scale) + 'px';
+        canvas.style.height = Math.round(state.imgA.height * scale) + 'px';
+        document.getElementById('zoomPercentText').textContent = `${Math.round(scale * 100)}%`;
+      } else {
+        canvas.style.width = Math.round(state.imgA.width * state.zoomLevel) + 'px';
+        canvas.style.height = Math.round(state.imgA.height * state.zoomLevel) + 'px';
+        document.getElementById('zoomPercentText').textContent = `${Math.round(state.zoomLevel * 100)}%`;
+      }
+    }
+
+    workspace.addEventListener('wheel', (e) => {
+      if (!state.imgA) return;
+      e.preventDefault();
+
+      const currentScale = state.zoomLevel === 0 ? (parseFloat(canvas.style.width) / state.imgA.width) : state.zoomLevel;
+      const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+      let nextScale = Math.min(10.0, Math.max(0.1, currentScale * zoomFactor));
+
+      setZoom(nextScale);
+    }, { passive: false });
+
+    document.getElementById('zoomInBtn').addEventListener('click', () => {
+      const currentScale = state.zoomLevel === 0 ? (parseFloat(canvas.style.width) / state.imgA.width) : state.zoomLevel;
+      setZoom(Math.min(10.0, currentScale * 1.25));
+    });
+
+    document.getElementById('zoomOutBtn').addEventListener('click', () => {
+      const currentScale = state.zoomLevel === 0 ? (parseFloat(canvas.style.width) / state.imgA.width) : state.zoomLevel;
+      setZoom(Math.max(0.1, currentScale / 1.25));
+    });
+
+    document.getElementById('zoomResetBtn').addEventListener('click', () => setZoom(1.0));
+    document.getElementById('zoomFitBtn').addEventListener('click', () => setZoom(0));
+
+    window.addEventListener('resize', () => {
+      if (state.zoomLevel === 0 && state.imgA) setZoom(0);
+    });
+
+    function solveLaplaceExact(boundTop, boundBot, boundLeft, boundRight, W, H) {
+      const M = W - 2;
+      const N = H - 2;
+      if (M <= 0 || N <= 0) return new Float32Array(W * H);
+
+      const f = new Float32Array(M * N);
+      for (let y = 0; y < N; y++) {
+        for (let x = 0; x < M; x++) {
+          let val = 0;
+          if (x === 0) val += boundLeft[y + 1];
+          if (x === M - 1) val += boundRight[y + 1];
+          if (y === 0) val += boundTop[x + 1];
+          if (y === N - 1) val += boundBot[x + 1];
+          f[y * M + x] = val;
+        }
+      }
+
+      const lambdaX = new Float32Array(M);
+      for (let p = 0; p < M; p++) {
+        lambdaX[p] = 2 * (1 - Math.cos(((p + 1) * Math.PI) / (M + 1)));
+      }
+      const lambdaY = new Float32Array(N);
+      for (let q = 0; q < N; q++) {
+        lambdaY[q] = 2 * (1 - Math.cos(((q + 1) * Math.PI) / (N + 1)));
+      }
+
+      const rowTrans = new Float32Array(M * N);
+      for (let y = 0; y < N; y++) {
+        const rowIn = f.subarray(y * M, (y + 1) * M);
+        const rowOut = rowTrans.subarray(y * M, (y + 1) * M);
+        dst1D(rowIn, rowOut, M);
+      }
+
+      const colIn = new Float32Array(N);
+      const colOut = new Float32Array(N);
+      const fullTrans = new Float32Array(M * N);
+
+      for (let x = 0; x < M; x++) {
+        for (let y = 0; y < N; y++) colIn[y] = rowTrans[y * M + x];
+        dst1D(colIn, colOut, N);
+        for (let y = 0; y < N; y++) {
+          const denom = lambdaX[x] + lambdaY[y];
+          fullTrans[y * M + x] = denom === 0 ? 0 : colOut[y] / denom;
+        }
+      }
+
+      for (let x = 0; x < M; x++) {
+        for (let y = 0; y < N; y++) colIn[y] = fullTrans[y * M + x];
+        idst1D(colIn, colOut, N);
+        for (let y = 0; y < N; y++) rowTrans[y * M + x] = colOut[y];
+      }
+
+      const innerSol = new Float32Array(M * N);
+      for (let y = 0; y < N; y++) {
+        const rowIn = rowTrans.subarray(y * M, (y + 1) * M);
+        const rowOut = innerSol.subarray(y * M, (y + 1) * M);
+        idst1D(rowIn, rowOut, M);
+      }
+
+      const result = new Float32Array(W * H);
+      for (let x = 0; x < W; x++) {
+        result[x] = boundTop[x];
+        result[(H - 1) * W + x] = boundBot[x];
+      }
+      for (let y = 0; y < H; y++) {
+        result[y * W] = boundLeft[y];
+        result[y * W + (W - 1)] = boundRight[y];
+      }
+      for (let y = 0; y < N; y++) {
+        for (let x = 0; x < M; x++) {
+          result[(y + 1) * W + (x + 1)] = innerSol[y * M + x];
+        }
+      }
+      return result;
+    }
+
+    function dst1D(src, dst, n) {
+      const factor = Math.PI / (n + 1);
+      for (let k = 0; k < n; k++) {
+        let sum = 0;
+        const kFactor = (k + 1) * factor;
+        for (let j = 0; j < n; j++) {
+          sum += src[j] * Math.sin((j + 1) * kFactor);
+        }
+        dst[k] = sum;
+      }
+    }
+
+    function idst1D(src, dst, n) {
+      const norm = 2 / (n + 1);
+      dst1D(src, dst, n);
+      for (let i = 0; i < n; i++) dst[i] *= norm;
+    }
+
+    async function executePoissonBlending() {
+      if (!state.imgA || !state.imgB || state.isBlending) return;
+      state.isBlending = true;
+      btnBlend.disabled = true;
+
+      const bx = Math.max(0, Math.floor(state.transform.x));
+      const by = Math.max(0, Math.floor(state.transform.y));
+      const bw = Math.min(Math.floor(state.transform.width), state.imgA.width - bx);
+      const bh = Math.min(Math.floor(state.transform.height), state.imgA.height - by);
+
+      if (bw <= 4 || bh <= 4) {
+        alert('合成領域が小さすぎるか、画像外です。');
+        state.isBlending = false;
+        btnBlend.disabled = false;
+        return;
+      }
+
+      const W = bw;
+      const H = bh;
+      const size = W * H;
+
+      ctx.drawImage(state.imgA, 0, 0);
+      const targetData = ctx.getImageData(bx, by, W, H);
+
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = W; offCanvas.height = H;
+      const offCtx = offCanvas.getContext('2d');
+      offCtx.drawImage(state.imgB, 0, 0, W, H);
+      const sourceData = offCtx.getImageData(0, 0, W, H);
+
+      const bTopR = new Float32Array(W), bBotR = new Float32Array(W), bLeftR = new Float32Array(H), bRightR = new Float32Array(H);
+      const bTopG = new Float32Array(W), bBotG = new Float32Array(W), bLeftG = new Float32Array(H), bRightG = new Float32Array(H);
+      const bTopB = new Float32Array(W), bBotB = new Float32Array(W), bLeftB = new Float32Array(H), bRightB = new Float32Array(H);
+
+      const srcR = new Float32Array(size), srcG = new Float32Array(size), srcB = new Float32Array(size);
+
+      for (let i = 0; i < size; i++) {
+        const p = i * 4;
+        srcR[i] = sourceData.data[p];
+        srcG[i] = sourceData.data[p + 1];
+        srcB[i] = sourceData.data[p + 2];
+      }
+
+      for (let x = 0; x < W; x++) {
+        const idxTop = x * 4;
+        const idxBot = ((H - 1) * W + x) * 4;
+        bTopR[x] = targetData.data[idxTop] - sourceData.data[idxTop];
+        bTopG[x] = targetData.data[idxTop + 1] - sourceData.data[idxTop + 1];
+        bTopB[x] = targetData.data[idxTop + 2] - sourceData.data[idxTop + 2];
+
+        bBotR[x] = targetData.data[idxBot] - sourceData.data[idxBot];
+        bBotG[x] = targetData.data[idxBot + 1] - sourceData.data[idxBot + 1];
+        bBotB[x] = targetData.data[idxBot + 2] - sourceData.data[idxBot + 2];
+      }
+
+      for (let y = 0; y < H; y++) {
+        const idxLeft = (y * W) * 4;
+        const idxRight = (y * W + (W - 1)) * 4;
+        bLeftR[y] = targetData.data[idxLeft] - sourceData.data[idxLeft];
+        bLeftG[y] = targetData.data[idxLeft + 1] - sourceData.data[idxLeft + 1];
+        bLeftB[y] = targetData.data[idxLeft + 2] - sourceData.data[idxLeft + 2];
+
+        bRightR[y] = targetData.data[idxRight] - sourceData.data[idxRight];
+        bRightG[y] = targetData.data[idxRight + 1] - sourceData.data[idxRight + 1];
+        bRightB[y] = targetData.data[idxRight + 2] - sourceData.data[idxRight + 2];
+      }
+
+      await new Promise(r => setTimeout(r, 20));
+
+      const eR = solveLaplaceExact(bTopR, bBotR, bLeftR, bRightR, W, H);
+      const eG = solveLaplaceExact(bTopG, bBotG, bLeftG, bRightG, W, H);
+      const eB = solveLaplaceExact(bTopB, bBotB, bLeftB, bRightB, W, H);
+
+      const outData = ctx.createImageData(W, H);
+      for (let i = 0; i < size; i++) {
+        const p = i * 4;
+        outData.data[p]     = Math.max(0, Math.min(255, Math.round(srcR[i] + eR[i])));
+        outData.data[p + 1] = Math.max(0, Math.min(255, Math.round(srcG[i] + eG[i])));
+        outData.data[p + 2] = Math.max(0, Math.min(255, Math.round(srcB[i] + eB[i])));
+        outData.data[p + 3] = 255;
+      }
+
+      ctx.drawImage(state.imgA, 0, 0);
+      ctx.putImageData(outData, bx, by);
+
+      state.isBlending = false;
+      state.isBlended = true;
+
+      const modeText = document.getElementById('modeText');
+      modeText.textContent = '合成完了 (厳密解)';
+      modeText.className = 'font-bold text-emerald-400';
+
+      btnBlend.disabled = false;
+      document.getElementById('btnReset').classList.remove('hidden');
+      downloadPngBtn.disabled = false;
+      downloadWebpBtn.disabled = false;
+    }
+
+    document.getElementById('fileA').addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) loadFileAsImage(e.target.files[0], 'A');
+    });
+    document.getElementById('fileB').addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) loadFileAsImage(e.target.files[0], 'B');
+    });
+    btnBlend.addEventListener('click', executePoissonBlending);
+
+    const resetHandler = () => {
+      state.isBlended = false;
+      const modeText = document.getElementById('modeText');
+      modeText.textContent = '配置・変形中';
+      modeText.className = 'font-bold text-indigo-400';
+      document.getElementById('btnReset').classList.add('hidden');
+      render();
+    };
+
+    document.getElementById('btnReset').addEventListener('click', resetHandler);
+    document.getElementById('btnResetTransformHeader').addEventListener('click', () => {
+      resetTransform();
+      resetHandler();
+    });
+
+    function exportImage(mimeType, filename) {
+      if (!state.imgA) return;
+      const a = document.createElement('a');
+      a.download = filename;
+      a.href = canvas.toDataURL(mimeType, 1.0);
+      a.click();
+    }
+
+    downloadPngBtn.addEventListener('click', () => exportImage('image/png', 'poisson_blended.png'));
+    downloadWebpBtn.addEventListener('click', () => exportImage('image/webp', 'poisson_blended.webp'));
+  </script>
+</body>
+</html>

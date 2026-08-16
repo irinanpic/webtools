@@ -1,0 +1,1854 @@
+<!DOCTYPE html>
+<html lang="ja" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>アニメーション画像メーカー (GIF / APNG / WebP)</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <!-- APNG Encoder Dependencies (Pako + UPNG.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.js"></script>
+
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+      border: 2px solid #0f172a;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* Grid pattern for transparent canvas preview */
+    .bg-checker {
+      background-color: #1e293b;
+      background-image: 
+        linear-gradient(45deg, #0f172a 25%, transparent 25%), 
+        linear-gradient(-45deg, #0f172a 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #0f172a 75%), 
+        linear-gradient(-45deg, transparent 75%, #0f172a 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    }
+
+    /* Custom color input */
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch { border: none; border-radius: 6px; }
+
+    /* Timeline dragging ghost effect */
+    .dragging {
+      opacity: 0.4;
+      transform: scale(0.96);
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col font-sans antialiased select-none bg-slate-900 text-slate-100 overflow-hidden">
+
+  <!-- Navigation Header -->
+  <header class="h-14 bg-slate-800/90 border-b border-slate-700/80 px-4 flex items-center justify-between shrink-0 shadow-md backdrop-blur z-20">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+        <i class="fa-solid fa-film text-lg"></i>
+      </div>
+      <div>
+        <h1 class="text-base font-bold tracking-tight text-white leading-none">アニメーション画像メーカー</h1>
+        <p class="text-xs text-slate-400 mt-1">パラパラ漫画風アニメ作成 (GIF / APNG / Animated WebP)</p>
+      </div>
+    </div>
+
+    <!-- Action Header Buttons -->
+    <div class="flex items-center space-x-2">
+      <button id="clearAllBtn" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg transition border border-slate-600 flex items-center space-x-1.5">
+        <i class="fa-solid fa-trash-can text-slate-400"></i>
+        <span>全クリア</span>
+      </button>
+
+      <label class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-indigo-600/20 cursor-pointer transition flex items-center space-x-1.5">
+        <i class="fa-solid fa-plus"></i>
+        <span>画像を追加</span>
+        <input type="file" id="imageInput" multiple accept="image/*" class="hidden">
+      </label>
+
+      <button id="exportModalBtn" class="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg shadow-md shadow-emerald-600/20 transition flex items-center space-x-1.5">
+        <i class="fa-solid fa-download"></i>
+        <span>アニメーションを書き出し</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Editor Workspace -->
+  <main class="flex-1 flex overflow-hidden">
+
+    <!-- Left Panel: Asset & Canvas Settings -->
+    <aside class="w-72 bg-slate-800/90 border-r border-slate-700/80 flex flex-col shrink-0 z-10">
+      <div class="p-3 border-b border-slate-700/80 font-bold text-xs text-slate-300 uppercase tracking-wider flex items-center">
+        <i class="fa-solid fa-sliders text-indigo-400 mr-2"></i>
+        <span>キャンバス・描画設定</span>
+      </div>
+
+      <div class="p-4 space-y-4 text-xs overflow-y-auto flex-1">
+        <!-- Canvas Size / Aspect Ratio Preset -->
+        <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-2">
+          <label class="block text-slate-300 font-medium">アスペクト比 / 解像度</label>
+          <select id="aspectRatioSelect" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500">
+            <option value="auto">1枚目の画像に合わせる (Auto)</option>
+            <option value="1:1">1:1 (正方形 - 800x800)</option>
+            <option value="16:9">16:9 (ワイド - 1280x720)</option>
+            <option value="4:3">4:3 (標準 - 800x600)</option>
+            <option value="custom">カスタムサイズ</option>
+          </select>
+        </div>
+
+        <!-- Custom Dimension Inputs -->
+        <div id="customDimensionBox" class="grid grid-cols-2 gap-2 hidden">
+          <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/60">
+            <label class="block text-[10px] text-slate-400 mb-0.5">幅 (px)</label>
+            <input type="number" id="customWidthInput" value="800" min="50" max="3840" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs">
+          </div>
+          <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/60">
+            <label class="block text-[10px] text-slate-400 mb-0.5">高さ (px)</label>
+            <input type="number" id="customHeightInput" value="600" min="50" max="3840" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 text-xs">
+          </div>
+        </div>
+
+        <!-- Fit Mode -->
+        <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-2">
+          <label class="block text-slate-300 font-medium">画像の配置（フィット方式）</label>
+          <select id="fitModeSelect" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:border-indigo-500">
+            <option value="contain">全体を収める (Contain - 余白あり)</option>
+            <option value="cover">枠いっぱいに拡大 (Cover - はみ出し切抜き)</option>
+            <option value="stretch">変形して引き伸ばす (Stretch)</option>
+          </select>
+        </div>
+
+        <!-- Background Color -->
+        <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-2">
+          <label class="block text-slate-300 font-medium">背景色</label>
+          <div class="flex items-center space-x-2">
+            <input type="color" id="bgColorInput" value="#000000" class="w-8 h-8 rounded border border-slate-700 bg-transparent cursor-pointer">
+            <input type="text" id="bgColorTextInput" value="#000000" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs uppercase">
+            <button id="bgTransparentBtn" class="px-2.5 py-1.5 bg-slate-700 border border-slate-600 rounded-lg text-[10px] text-slate-200 hover:bg-slate-600 transition">透過</button>
+          </div>
+        </div>
+
+        <!-- Frame Summary Stats -->
+        <div class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-700/60 space-y-2">
+          <div class="flex justify-between text-[11px]">
+            <span class="text-slate-400">総フレーム数:</span>
+            <span id="statTotalFrames" class="font-mono text-white font-bold">0 枚</span>
+          </div>
+          <div class="flex justify-between text-[11px]">
+            <span class="text-slate-400">総再生時間:</span>
+            <span id="statTotalDuration" class="font-mono text-indigo-400 font-bold">0.0 秒</span>
+          </div>
+          <div class="flex justify-between text-[11px]">
+            <span class="text-slate-400">出力キャンバス:</span>
+            <span id="statCanvasResolution" class="font-mono text-slate-300">0 x 0 px</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center Panel: Continuous Live Canvas Preview -->
+    <section class="flex-1 bg-slate-950 flex flex-col relative overflow-hidden">
+      <!-- Preview Header Toolbar -->
+      <div class="h-10 border-b border-slate-700/80 bg-slate-800/80 px-4 flex items-center justify-between text-xs text-slate-400">
+        <span class="flex items-center space-x-2">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          <span class="font-semibold text-slate-200">リアルタイムプレビュー</span>
+        </span>
+
+        <div class="flex items-center space-x-4">
+          <span id="playbackCounter" class="font-mono text-indigo-400 font-bold text-xs">Frame 0 / 0</span>
+        </div>
+      </div>
+
+      <!-- Canvas Viewport -->
+      <div id="canvasContainer" class="flex-1 flex items-center justify-center p-6 overflow-hidden relative bg-checker">
+        <!-- Canvas Element -->
+        <canvas id="previewCanvas" class="max-w-full max-h-full rounded-lg shadow-2xl border border-slate-700/80 transition-all object-contain"></canvas>
+
+        <!-- Empty Dropzone Overlay when no frames -->
+        <div id="emptyDropzone" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/90 p-6 text-center cursor-pointer">
+          <div class="w-16 h-16 rounded-full bg-slate-800 border border-slate-700 text-indigo-400 flex items-center justify-center mb-4 text-2xl shadow-lg">
+            <i class="fa-solid fa-cloud-arrow-up"></i>
+          </div>
+          <h3 class="text-base font-bold text-slate-200 mb-1">画像をドラッグ＆ドロップ</h3>
+          <p class="text-xs text-slate-400 max-w-sm mb-4">複数の静止画像(PNG, JPG, WebP, GIF)を一括で読み込んでアニメーションを作成します。</p>
+          <label class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold cursor-pointer shadow-lg shadow-indigo-600/20 transition">
+            ファイルを選択
+            <input type="file" id="dropzoneInput" multiple accept="image/*" class="hidden">
+          </label>
+        </div>
+      </div>
+
+      <!-- Playback Controls Bar -->
+      <div class="h-12 border-t border-slate-700/80 bg-slate-800 px-6 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <button id="prevFrameBtn" class="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition text-xs" title="前のフレーム">
+            <i class="fa-solid fa-backward-step"></i>
+          </button>
+          
+          <button id="playPauseBtn" class="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition font-semibold flex items-center space-x-1.5 text-xs shadow-md shadow-indigo-600/20">
+            <i id="playIcon" class="fa-solid fa-play"></i>
+            <span id="playText">再生</span>
+          </button>
+
+          <button id="nextFrameBtn" class="p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition text-xs" title="次のフレーム">
+            <i class="fa-solid fa-forward-step"></i>
+          </button>
+        </div>
+
+        <!-- Loop Toggle & Speed Adjust -->
+        <div class="flex items-center space-x-4 text-xs">
+          <label class="flex items-center space-x-1.5 cursor-pointer text-slate-300">
+            <input type="checkbox" id="loopToggle" checked class="rounded accent-indigo-600 bg-slate-800 border-slate-700">
+            <span>ループ再生</span>
+          </label>
+
+          <div class="flex items-center space-x-1.5 text-slate-400">
+            <span>速度倍率:</span>
+            <select id="speedMultiplierSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-slate-200 font-mono text-xs">
+              <option value="0.5">0.5x (遅く)</option>
+              <option value="1.0" selected>1.0x (標準)</option>
+              <option value="1.5">1.5x</option>
+              <option value="2.0">2.0x (速く)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Panel: Selected Frame Inspector -->
+    <aside class="w-64 bg-slate-800/90 border-l border-slate-700/80 flex flex-col shrink-0 z-10">
+      <div class="p-3 border-b border-slate-700/80 font-bold text-xs text-slate-300 uppercase tracking-wider flex items-center space-x-2">
+        <i class="fa-solid fa-circle-info text-indigo-400"></i>
+        <span>選択フレームの詳細設定</span>
+      </div>
+
+      <div id="inspectorContent" class="p-4 space-y-4 text-xs overflow-y-auto flex-1">
+        <p class="text-slate-500 text-center py-8 text-[11px]">タイムラインで画像を選択すると詳細が表示されます。</p>
+      </div>
+    </aside>
+  </main>
+
+  <!-- Bottom Panel: Visual Video-Editor Style Timeline -->
+  <footer class="h-44 bg-slate-800/90 border-t border-slate-700/80 flex flex-col shrink-0 z-20">
+    <!-- Timeline Header Controls -->
+    <div class="h-8 border-b border-slate-700/80 px-4 flex items-center justify-between text-[11px] text-slate-400 bg-slate-900/60">
+      <div class="flex items-center space-x-2">
+        <i class="fa-solid fa-layer-group text-indigo-400"></i>
+        <span class="font-bold text-slate-200">シーケンスタイムライン</span>
+        <span class="text-[10px] text-slate-500">（カード右端ドラッグで個別の表示時間を伸縮可能）</span>
+      </div>
+
+      <div class="flex items-center space-x-3 font-mono text-[10px]">
+        <span>総時間: <span id="timelineDurationLabel" class="text-indigo-400 font-bold">0.0s</span></span>
+      </div>
+    </div>
+
+    <!-- Scrollable Timeline Track Container -->
+    <div id="timelineScrollContainer" class="flex-1 p-3 overflow-x-auto overflow-y-hidden flex items-center space-x-2 relative bg-slate-950/60">
+      <div id="timelineList" class="flex items-center space-x-2 h-full min-w-full">
+        <!-- Frame cards will be inserted dynamically -->
+      </div>
+    </div>
+  </footer>
+
+  <!-- Export Settings Modal -->
+  <div id="exportModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+    <div class="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md p-5 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-700 pb-3">
+        <h3 class="font-bold text-sm text-white flex items-center space-x-2">
+          <i class="fa-solid fa-download text-emerald-400"></i>
+          <span>アニメーション画像を出力</span>
+        </h3>
+        <button id="closeExportModalBtn" class="text-slate-400 hover:text-white transition">
+          <i class="fa-solid fa-xmark text-base"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4 text-xs">
+        <!-- Export Format Selection -->
+        <div>
+          <label class="block text-slate-300 font-medium mb-1.5">出力フォーマット:</label>
+          <div class="grid grid-cols-3 gap-2">
+            <label class="border border-slate-700 rounded-lg p-2.5 cursor-pointer bg-slate-900/60 hover:border-indigo-500 transition text-center flex flex-col items-center">
+              <input type="radio" name="exportFormat" value="webp" checked class="hidden peer">
+              <span class="font-bold text-sm peer-checked:text-indigo-400">WebP</span>
+              <span class="text-[10px] text-slate-400 mt-0.5">Animated WebP</span>
+            </label>
+            <label class="border border-slate-700 rounded-lg p-2.5 cursor-pointer bg-slate-900/60 hover:border-indigo-500 transition text-center flex flex-col items-center">
+              <input type="radio" name="exportFormat" value="apng" class="hidden peer">
+              <span class="font-bold text-sm peer-checked:text-indigo-400">APNG</span>
+              <span class="text-[10px] text-slate-400 mt-0.5">高画質・PNG</span>
+            </label>
+            <label class="border border-slate-700 rounded-lg p-2.5 cursor-pointer bg-slate-900/60 hover:border-indigo-500 transition text-center flex flex-col items-center">
+              <input type="radio" name="exportFormat" value="gif" class="hidden peer">
+              <span class="font-bold text-sm peer-checked:text-indigo-400">GIF</span>
+              <span class="text-[10px] text-slate-400 mt-0.5">標準互換</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- WebP Specific Compression Options -->
+        <div id="webpOptionsBox" class="space-y-3 bg-slate-900/60 p-3 rounded-lg border border-slate-700">
+          <div>
+            <label class="block text-slate-300 font-medium mb-1.5">WebP 圧縮方式:</label>
+            <div class="grid grid-cols-2 gap-2">
+              <label class="border border-slate-700 rounded-md p-2 cursor-pointer bg-slate-800 hover:border-indigo-500 transition flex items-center space-x-2">
+                <input type="radio" name="webpCompression" value="lossy" checked class="accent-indigo-600">
+                <div>
+                  <span class="text-xs font-bold text-slate-200 block">非可逆圧縮 (Lossy)</span>
+                  <span class="text-[9px] text-slate-400 block">高圧縮・軽量</span>
+                </div>
+              </label>
+              <label class="border border-slate-700 rounded-md p-2 cursor-pointer bg-slate-800 hover:border-indigo-500 transition flex items-center space-x-2">
+                <input type="radio" name="webpCompression" value="lossless" class="accent-indigo-600">
+                <div>
+                  <span class="text-xs font-bold text-slate-200 block">可逆圧縮 (Lossless)</span>
+                  <span class="text-[9px] text-slate-400 block">画質無劣化・100%</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div id="webpQualityContainer">
+            <div class="flex justify-between mb-1">
+              <label class="text-slate-300 font-medium">WebP 画質 (Quality):</label>
+              <span id="webpQualityText" class="font-mono text-indigo-400">90%</span>
+            </div>
+            <input type="range" id="webpQualitySlider" min="0.1" max="1.0" step="0.05" value="0.9" class="w-full accent-indigo-500 cursor-pointer">
+          </div>
+        </div>
+
+        <!-- Scale / Resolution Factor -->
+        <div>
+          <div class="flex justify-between mb-1">
+            <label class="text-slate-300 font-medium">出力スケール (解像度):</label>
+            <span id="exportScaleText" class="font-mono text-indigo-400">100%</span>
+          </div>
+          <input type="range" id="exportScaleSlider" min="0.25" max="1.0" step="0.25" value="1.0" class="w-full accent-indigo-500 cursor-pointer">
+          <p class="text-[10px] text-slate-500 mt-1">※解像度を下げると生成速度が向上し、ファイルサイズが小さくなります。</p>
+        </div>
+
+        <!-- Progress Indicator -->
+        <div id="exportProgressBox" class="hidden space-y-2 pt-2 border-t border-slate-700">
+          <div class="flex justify-between text-[11px] text-slate-300 font-semibold">
+            <span id="exportStatusText">エンコード中...</span>
+            <span id="exportPercentText" class="font-mono text-indigo-400">0%</span>
+          </div>
+          <div class="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-700">
+            <div id="exportProgressBar" class="bg-indigo-500 h-full w-0 transition-all duration-150"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="flex justify-end space-x-2 pt-2">
+        <button id="cancelExportBtn" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg text-xs font-semibold transition">キャンセル</button>
+        <button id="startExportBtn" class="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-emerald-600/20 transition">書き出し開始</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pure JS GIF Encoder Dependencies (NeuQuant & LZW Encoder) -->
+  <script>
+    // Pure JS NeuQuant Palette Quantizer
+    class NeuQuant {
+      constructor(pixels, samplefac = 10) {
+        this.netsize = 256;
+        this.network = new Array(256);
+        this.netindex = new Int32Array(256);
+        this.bias = new Int32Array(256);
+        this.freq = new Int32Array(256);
+        this.radpower = new Int32Array(32);
+        this.pixels = pixels;
+        this.samplefac = samplefac;
+
+        for (let i = 0; i < 256; i++) {
+          let v = (i << 12) / 256;
+          this.network[i] = new Float64Array([v, v, v, 0]);
+          this.freq[i] = 65536 / 256;
+          this.bias[i] = 0;
+        }
+      }
+
+      init() {
+        this.learn();
+        this.unbiasnet();
+        this.inxbuild();
+      }
+
+      unbiasnet() {
+        for (let i = 0; i < 256; i++) {
+          this.network[i][0] >>= 4;
+          this.network[i][1] >>= 4;
+          this.network[i][2] >>= 4;
+          this.network[i][3] = i;
+        }
+      }
+
+      alterneigh(rad, i, b, g, r) {
+        let lo = Math.max(0, i - rad);
+        let hi = Math.min(255, i + rad);
+        let k = i + 1;
+        let j = i - 1;
+        let m = 1;
+        while (k <= hi || j >= lo) {
+          let a = this.radpower[m++];
+          if (k <= hi) {
+            let p = this.network[k++];
+            p[0] -= (a * (p[0] - b)) / 65536;
+            p[1] -= (a * (p[1] - g)) / 65536;
+            p[2] -= (a * (p[2] - r)) / 65536;
+          }
+          if (j >= lo) {
+            let p = this.network[j--];
+            p[0] -= (a * (p[0] - b)) / 65536;
+            p[1] -= (a * (p[1] - g)) / 65536;
+            p[2] -= (a * (p[2] - r)) / 65536;
+          }
+        }
+      }
+
+      altersingle(alpha, i, b, g, r) {
+        let p = this.network[i];
+        p[0] -= (alpha * (p[0] - b)) / 1024;
+        p[1] -= (alpha * (p[1] - g)) / 1024;
+        p[2] -= (alpha * (p[2] - r)) / 1024;
+      }
+
+      contest(b, g, r) {
+        let bestd = ~(1 << 31);
+        let bestbiasd = bestd;
+        let bestpos = -1;
+        let bestbiaspos = bestpos;
+
+        for (let i = 0; i < 256; i++) {
+          let p = this.network[i];
+          let dist = Math.abs(p[0] - b) + Math.abs(p[1] - g) + Math.abs(p[2] - r);
+          if (dist < bestd) {
+            bestd = dist;
+            bestpos = i;
+          }
+          let biasdist = dist - (this.bias[i] >> 6);
+          if (biasdist < bestbiasd) {
+            bestbiasd = biasdist;
+            bestbiaspos = i;
+          }
+          let betafreq = this.freq[i] >> 10;
+          this.freq[i] -= betafreq;
+          this.bias[i] += betafreq << 10;
+        }
+        this.freq[bestpos] += 64;
+        this.bias[bestpos] -= 65536;
+        return bestbiaspos;
+      }
+
+      learn() {
+        let lengthcount = this.pixels.length;
+        let samplefac = this.samplefac;
+        let alphadec = 30 + (samplefac - 1) / 3;
+        let samplepixels = Math.floor(lengthcount / (4 * samplefac));
+        let delta = Math.floor(samplepixels / 100);
+        let alpha = 1024;
+        let radius = 2048;
+        let rad = radius >> 6;
+        if (rad <= 1) rad = 0;
+        for (let i = 0; i < rad; i++) {
+          this.radpower[i] = Math.floor(alpha * (((rad * rad - i * i) * 256) / (rad * rad)));
+        }
+
+        let step;
+        if (lengthcount < 1600) {
+          step = 4;
+        } else if (lengthcount % 499 !== 0) {
+          step = 499 * 4;
+        } else if (lengthcount % 491 !== 0) {
+          step = 491 * 4;
+        } else if (lengthcount % 487 !== 0) {
+          step = 487 * 4;
+        } else {
+          step = 503 * 4;
+        }
+
+        let pix = 0;
+        let i = 0;
+        while (i < samplepixels) {
+          let b = (this.pixels[pix] & 0xff) << 4;
+          let g = (this.pixels[pix + 1] & 0xff) << 4;
+          let r = (this.pixels[pix + 2] & 0xff) << 4;
+          let j = this.contest(b, g, r);
+
+          this.altersingle(alpha, j, b, g, r);
+          if (rad !== 0) this.alterneigh(rad, j, b, g, r);
+
+          pix += step;
+          if (pix >= lengthcount) pix -= lengthcount;
+
+          i++;
+          if (delta === 0) delta = 1;
+          if (i % delta === 0) {
+            alpha -= Math.floor(alpha / alphadec);
+            radius -= Math.floor(radius / 30);
+            rad = radius >> 6;
+            if (rad <= 1) rad = 0;
+            for (let j = 0; j < rad; j++) {
+              this.radpower[j] = Math.floor(alpha * (((rad * rad - j * j) * 256) / (rad * rad)));
+            }
+          }
+        }
+      }
+
+      inxbuild() {
+        let previouscol = 0;
+        let startpos = 0;
+        for (let i = 0; i < 256; i++) {
+          let p = this.network[i];
+          let smallpos = i;
+          let smallval = p[1];
+          for (let j = i + 1; j < 256; j++) {
+            let q = this.network[j];
+            if (q[1] < smallval) {
+              smallpos = j;
+              smallval = q[1];
+            }
+          }
+          let q = this.network[smallpos];
+          if (i !== smallpos) {
+            [p[0], q[0]] = [q[0], p[0]];
+            [p[1], q[1]] = [q[1], p[1]];
+            [p[2], q[2]] = [q[2], p[2]];
+            [p[3], q[3]] = [q[3], p[3]];
+          }
+          if (smallval !== previouscol) {
+            this.netindex[previouscol] = (startpos + i) >> 1;
+            for (let j = previouscol + 1; j < smallval; j++) this.netindex[j] = i;
+            previouscol = smallval;
+            startpos = i;
+          }
+        }
+        this.netindex[previouscol] = (startpos + 255) >> 1;
+        for (let j = previouscol + 1; j < 256; j++) this.netindex[j] = 255;
+      }
+
+      lookup(b, g, r) {
+        let bestd = 1000;
+        let best = -1;
+        let i = this.netindex[g];
+        let j = i - 1;
+
+        while (i < 256 || j >= 0) {
+          if (i < 256) {
+            let p = this.network[i];
+            let dist = p[1] - g;
+            if (dist >= bestd) i = 256;
+            else {
+              i++;
+              if (dist < 0) dist = -dist;
+              let a = p[0] - b;
+              if (a < 0) a = -a;
+              dist += a;
+              if (dist < bestd) {
+                a = p[2] - r;
+                if (a < 0) a = -a;
+                dist += a;
+                if (dist < bestd) {
+                  bestd = dist;
+                  best = p[3];
+                }
+              }
+            }
+          }
+          if (j >= 0) {
+            let p = this.network[j];
+            let dist = g - p[1];
+            if (dist >= bestd) j = -1;
+            else {
+              j--;
+              if (dist < 0) dist = -dist;
+              let a = p[0] - b;
+              if (a < 0) a = -a;
+              dist += a;
+              if (dist < bestd) {
+                a = p[2] - r;
+                if (a < 0) a = -a;
+                dist += a;
+                if (dist < bestd) {
+                  bestd = dist;
+                  best = p[3];
+                }
+              }
+            }
+          }
+        }
+        return best;
+      }
+
+      getPalette() {
+        let pal = new Uint8Array(256 * 3);
+        for (let i = 0; i < 256; i++) {
+          for (let j = 0; j < 256; j++) {
+            if (this.network[j][3] === i) {
+              pal[i * 3 + 0] = Math.round(this.network[j][2]); // R
+              pal[i * 3 + 1] = Math.round(this.network[j][1]); // G
+              pal[i * 3 + 2] = Math.round(this.network[j][0]); // B
+              break;
+            }
+          }
+        }
+        return pal;
+      }
+    }
+
+    // Pure JS LZW Compressor for GIF
+    function encodeGIFLZW(width, height, pixels, minCodeSize) {
+      const out = [];
+      const clearCode = 1 << minCodeSize;
+      const eofCode = clearCode + 1;
+
+      let codeSize = minCodeSize + 1;
+      let freeCode = clearCode + 2;
+
+      let dict = new Map();
+
+      let accum = 0;
+      let bits = 0;
+      let block = [];
+
+      function writeCode(code) {
+        accum |= (code << bits);
+        bits += codeSize;
+        while (bits >= 8) {
+          block.push(accum & 0xff);
+          accum >>= 8;
+          bits -= 8;
+          if (block.length === 255) {
+            out.push(255, ...block);
+            block = [];
+          }
+        }
+      }
+
+      function flush() {
+        if (bits > 0) {
+          block.push(accum & 0xff);
+          accum = 0;
+          bits = 0;
+        }
+        if (block.length > 0) {
+          out.push(block.length, ...block);
+          block = [];
+        }
+      }
+
+      writeCode(clearCode);
+
+      let prefix = pixels[0];
+
+      for (let i = 1; i < pixels.length; i++) {
+        const k = pixels[i];
+        const key = (prefix << 16) | k;
+        if (dict.has(key)) {
+          prefix = dict.get(key);
+        } else {
+          writeCode(prefix);
+          if (freeCode < 4096) {
+            dict.set(key, freeCode++);
+            if (freeCode === (1 << codeSize) + 1 && codeSize < 12) {
+              codeSize++;
+            }
+          } else {
+            writeCode(clearCode);
+            dict.clear();
+            codeSize = minCodeSize + 1;
+            freeCode = clearCode + 2;
+          }
+          prefix = k;
+        }
+      }
+
+      writeCode(prefix);
+      writeCode(eofCode);
+      flush();
+      out.push(0);
+
+      return new Uint8Array(out);
+    }
+  </script>
+
+  <!-- Application Logic -->
+  <script>
+    // Global Application State
+    const state = {
+      frames: [], // Array of { id, src, img, duration (in sec), width, height }
+      selectedFrameIndex: 0,
+      currentFrameIndex: 0,
+      isPlaying: false,
+      isLooping: true,
+      speedMultiplier: 1.0,
+      
+      // Canvas Settings
+      aspectRatioMode: 'auto', // auto, 1:1, 16:9, 4:3, custom
+      customWidth: 800,
+      customHeight: 600,
+      fitMode: 'contain', // contain, cover, stretch
+      bgColor: '#000000',
+      
+      // Playback Timer
+      playbackTimer: null,
+      
+      // Dragging State
+      draggedIndex: null,
+
+      // Timeline Resizing State
+      isResizingDuration: false,
+      resizingIndex: null,
+      resizeStartX: 0,
+      resizeStartDuration: 1.0
+    };
+
+    // DOM Element References
+    const elements = {
+      imageInput: document.getElementById('imageInput'),
+      dropzoneInput: document.getElementById('dropzoneInput'),
+      emptyDropzone: document.getElementById('emptyDropzone'),
+      clearAllBtn: document.getElementById('clearAllBtn'),
+      
+      previewCanvas: document.getElementById('previewCanvas'),
+      canvasContainer: document.getElementById('canvasContainer'),
+      
+      playPauseBtn: document.getElementById('playPauseBtn'),
+      playIcon: document.getElementById('playIcon'),
+      playText: document.getElementById('playText'),
+      prevFrameBtn: document.getElementById('prevFrameBtn'),
+      nextFrameBtn: document.getElementById('nextFrameBtn'),
+      loopToggle: document.getElementById('loopToggle'),
+      speedMultiplierSelect: document.getElementById('speedMultiplierSelect'),
+      playbackCounter: document.getElementById('playbackCounter'),
+      
+      aspectRatioSelect: document.getElementById('aspectRatioSelect'),
+      customDimensionBox: document.getElementById('customDimensionBox'),
+      customWidthInput: document.getElementById('customWidthInput'),
+      customHeightInput: document.getElementById('customHeightInput'),
+      fitModeSelect: document.getElementById('fitModeSelect'),
+      bgColorInput: document.getElementById('bgColorInput'),
+      bgColorTextInput: document.getElementById('bgColorTextInput'),
+      bgTransparentBtn: document.getElementById('bgTransparentBtn'),
+      
+      statTotalFrames: document.getElementById('statTotalFrames'),
+      statTotalDuration: document.getElementById('statTotalDuration'),
+      statCanvasResolution: document.getElementById('statCanvasResolution'),
+      
+      inspectorContent: document.getElementById('inspectorContent'),
+      timelineList: document.getElementById('timelineList'),
+      timelineDurationLabel: document.getElementById('timelineDurationLabel'),
+      
+      exportModalBtn: document.getElementById('exportModalBtn'),
+      exportModal: document.getElementById('exportModal'),
+      closeExportModalBtn: document.getElementById('closeExportModalBtn'),
+      cancelExportBtn: document.getElementById('cancelExportBtn'),
+      startExportBtn: document.getElementById('startExportBtn'),
+      exportScaleSlider: document.getElementById('exportScaleSlider'),
+      exportScaleText: document.getElementById('exportScaleText'),
+      exportProgressBox: document.getElementById('exportProgressBox'),
+      exportStatusText: document.getElementById('exportStatusText'),
+      exportPercentText: document.getElementById('exportPercentText'),
+      exportProgressBar: document.getElementById('exportProgressBar'),
+      
+      webpOptionsBox: document.getElementById('webpOptionsBox'),
+      webpQualitySlider: document.getElementById('webpQualitySlider'),
+      webpQualityText: document.getElementById('webpQualityText')
+    };
+
+    // Helper: Generate unique ID
+    function generateId() {
+      return 'f_' + Math.random().toString(36).substr(2, 9);
+    }
+
+    // Image Loader
+    async function handleFileSelect(files) {
+      if (!files || files.length === 0) return;
+
+      const fileArray = Array.from(files).filter(file => file.type.startsWith('image/'));
+      if (fileArray.length === 0) return;
+
+      for (const file of fileArray) {
+        const src = await readFileAsDataURL(file);
+        const img = await loadImage(src);
+
+        state.frames.push({
+          id: generateId(),
+          src: src,
+          img: img,
+          duration: 1.0, // Default 1.0 second per frame
+          width: img.naturalWidth,
+          height: img.naturalHeight
+        });
+      }
+
+      if (state.frames.length > 0 && !state.isPlaying) {
+        state.currentFrameIndex = 0;
+        state.selectedFrameIndex = 0;
+      }
+
+      updateUI();
+      renderPreview();
+    }
+
+    function readFileAsDataURL(file) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target.result);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function loadImage(src) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.src = src;
+      });
+    }
+
+    // Event Listeners for Upload
+    elements.imageInput.addEventListener('change', (e) => handleFileSelect(e.target.files));
+    elements.dropzoneInput.addEventListener('change', (e) => handleFileSelect(e.target.files));
+
+    // Drag and drop onto center canvas container
+    elements.canvasContainer.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      elements.canvasContainer.classList.add('border-2', 'border-indigo-500');
+    });
+
+    elements.canvasContainer.addEventListener('dragleave', () => {
+      elements.canvasContainer.classList.remove('border-2', 'border-indigo-500');
+    });
+
+    elements.canvasContainer.addEventListener('drop', (e) => {
+      e.preventDefault();
+      elements.canvasContainer.classList.remove('border-2', 'border-indigo-500');
+      if (e.dataTransfer.files) {
+        handleFileSelect(e.dataTransfer.files);
+      }
+    });
+
+    // Clear All
+    elements.clearAllBtn.addEventListener('click', () => {
+      stopPlayback();
+      state.frames = [];
+      state.selectedFrameIndex = 0;
+      state.currentFrameIndex = 0;
+      updateUI();
+      renderPreview();
+    });
+
+    // Get Current Target Canvas Dimensions
+    function getTargetCanvasDimensions() {
+      if (state.frames.length === 0) {
+        return { width: 800, height: 600 };
+      }
+
+      const firstFrame = state.frames[0];
+
+      switch (state.aspectRatioMode) {
+        case '1:1':
+          return { width: 800, height: 800 };
+        case '16:9':
+          return { width: 1280, height: 720 };
+        case '4:3':
+          return { width: 800, height: 600 };
+        case 'custom':
+          return { 
+            width: Math.max(50, state.customWidth), 
+            height: Math.max(50, state.customHeight) 
+          };
+        case 'auto':
+        default:
+          return { width: firstFrame.width, height: firstFrame.height };
+      }
+    }
+
+    // Draw frame on canvas
+    function renderFrameToCanvas(frame, targetWidth, targetHeight, targetCanvas = null) {
+      const canvas = targetCanvas || document.createElement('canvas');
+      canvas.width = targetWidth;
+      canvas.height = targetHeight;
+      const ctx = canvas.getContext('2d');
+
+      ctx.clearRect(0, 0, targetWidth, targetHeight);
+
+      // Fill background
+      if (state.bgColor !== 'transparent') {
+        ctx.fillStyle = state.bgColor;
+        ctx.fillRect(0, 0, targetWidth, targetHeight);
+      }
+
+      if (!frame || !frame.img) return canvas;
+
+      const img = frame.img;
+      const imgW = frame.width;
+      const imgH = frame.height;
+
+      if (state.fitMode === 'stretch') {
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+      } else if (state.fitMode === 'cover') {
+        const scale = Math.max(targetWidth / imgW, targetHeight / imgH);
+        const nw = imgW * scale;
+        const nh = imgH * scale;
+        const nx = (targetWidth - nw) / 2;
+        const ny = (targetHeight - nh) / 2;
+        ctx.drawImage(img, nx, ny, nw, nh);
+      } else {
+        // contain
+        const scale = Math.min(targetWidth / imgW, targetHeight / imgH);
+        const nw = imgW * scale;
+        const nh = imgH * scale;
+        const nx = (targetWidth - nw) / 2;
+        const ny = (targetHeight - nh) / 2;
+        ctx.drawImage(img, nx, ny, nw, nh);
+      }
+
+      return canvas;
+    }
+
+    // Render Live Main Preview
+    function renderPreview() {
+      if (state.frames.length === 0) {
+        elements.emptyDropzone.classList.remove('hidden');
+        elements.previewCanvas.width = 600;
+        elements.previewCanvas.height = 400;
+        const ctx = elements.previewCanvas.getContext('2d');
+        ctx.clearRect(0, 0, 600, 400);
+        return;
+      }
+
+      elements.emptyDropzone.classList.add('hidden');
+      const targetDim = getTargetCanvasDimensions();
+      const currentFrame = state.frames[state.currentFrameIndex] || state.frames[0];
+
+      renderFrameToCanvas(currentFrame, targetDim.width, targetDim.height, elements.previewCanvas);
+    }
+
+    // Continuous Animation Playback Engine
+    function startPlayback() {
+      if (state.frames.length === 0) return;
+      state.isPlaying = true;
+      updatePlaybackUI();
+      scheduleNextFrame();
+    }
+
+    function stopPlayback() {
+      state.isPlaying = false;
+      if (state.playbackTimer) {
+        clearTimeout(state.playbackTimer);
+        state.playbackTimer = null;
+      }
+      updatePlaybackUI();
+    }
+
+    function scheduleNextFrame() {
+      if (!state.isPlaying || state.frames.length === 0) return;
+
+      const currentFrame = state.frames[state.currentFrameIndex];
+      const durationMs = Math.max(20, Math.round((currentFrame.duration * 1000) / state.speedMultiplier));
+
+      state.playbackTimer = setTimeout(() => {
+        if (!state.isPlaying) return;
+
+        if (state.currentFrameIndex < state.frames.length - 1) {
+          state.currentFrameIndex++;
+        } else {
+          if (state.isLooping) {
+            state.currentFrameIndex = 0;
+          } else {
+            stopPlayback();
+            return;
+          }
+        }
+
+        renderPreview();
+        updateTimelineActiveState();
+        scheduleNextFrame();
+      }, durationMs);
+    }
+
+    function updatePlaybackUI() {
+      if (state.isPlaying) {
+        elements.playText.textContent = '一時停止';
+        elements.playIcon.className = 'fa-solid fa-pause';
+      } else {
+        elements.playText.textContent = '再生';
+        elements.playIcon.className = 'fa-solid fa-play';
+      }
+    }
+
+    // Playback Controls Handlers
+    elements.playPauseBtn.addEventListener('click', () => {
+      if (state.isPlaying) {
+        stopPlayback();
+      } else {
+        startPlayback();
+      }
+    });
+
+    elements.prevFrameBtn.addEventListener('click', () => {
+      stopPlayback();
+      if (state.frames.length === 0) return;
+      state.currentFrameIndex = (state.currentFrameIndex - 1 + state.frames.length) % state.frames.length;
+      state.selectedFrameIndex = state.currentFrameIndex;
+      renderPreview();
+      updateUI();
+    });
+
+    elements.nextFrameBtn.addEventListener('click', () => {
+      stopPlayback();
+      if (state.frames.length === 0) return;
+      state.currentFrameIndex = (state.currentFrameIndex + 1) % state.frames.length;
+      state.selectedFrameIndex = state.currentFrameIndex;
+      renderPreview();
+      updateUI();
+    });
+
+    elements.loopToggle.addEventListener('change', (e) => {
+      state.isLooping = e.target.checked;
+    });
+
+    elements.speedMultiplierSelect.addEventListener('change', (e) => {
+      state.speedMultiplier = parseFloat(e.target.value);
+    });
+
+    // Render Timeline Cards
+    function renderTimeline() {
+      elements.timelineList.innerHTML = '';
+
+      state.frames.forEach((frame, index) => {
+        const isSelected = index === state.selectedFrameIndex;
+        const isActive = index === state.currentFrameIndex;
+
+        const card = document.createElement('div');
+        card.className = `relative shrink-0 bg-slate-900/80 rounded-xl border-2 transition-all cursor-pointer group flex flex-col overflow-hidden select-none ${
+          isSelected ? 'border-indigo-500 ring-2 ring-indigo-500/30' : 'border-slate-700 hover:border-slate-500'
+        }`;
+        card.draggable = true;
+        card.dataset.index = index;
+
+        // Visual width scaling based on duration for video editor feel
+        const durationWidth = Math.min(320, Math.max(110, Math.round(70 + frame.duration * 40)));
+        card.style.width = `${durationWidth}px`;
+
+        card.innerHTML = `
+          <!-- Header Bar -->
+          <div class="px-2 py-1 bg-slate-800 border-b border-slate-700/80 flex items-center justify-between text-[10px]">
+            <span class="font-mono ${isActive ? 'text-indigo-400 font-bold' : 'text-slate-400'}">
+              #${index + 1} ${isActive ? '▶' : ''}
+            </span>
+            <span class="frame-duration-badge font-mono bg-indigo-500/20 text-indigo-300 px-1.5 py-0.2 rounded font-semibold">
+              ${frame.duration.toFixed(1)}s
+            </span>
+          </div>
+
+          <!-- Thumbnail -->
+          <div class="h-20 bg-slate-950 p-1 flex items-center justify-center relative overflow-hidden">
+            <img src="${frame.src}" class="max-w-full max-h-full object-contain pointer-events-none">
+            
+            <!-- Quick Actions on Hover -->
+            <div class="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex items-center justify-center space-x-2">
+              <button class="delete-frame-card p-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg transition" title="削除">
+                <i class="fa-solid fa-trash-can text-xs"></i>
+              </button>
+              <button class="dup-frame-card p-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition" title="複製">
+                <i class="fa-solid fa-copy text-xs"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Duration Quick Adjust Bar -->
+          <div class="p-1.5 bg-slate-800 border-t border-slate-700/80 flex items-center justify-between">
+            <button class="time-step-down px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-[10px] font-bold">-</button>
+            <span class="frame-duration-text text-[10px] text-slate-400 font-mono">${frame.duration.toFixed(1)}s</span>
+            <button class="time-step-up px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-[10px] font-bold">+</button>
+          </div>
+
+          <!-- Drag Resize Handle (Right Border for Duration Adjustment) -->
+          <div class="duration-resize-handle absolute top-0 right-0 bottom-0 w-2.5 bg-indigo-600/30 hover:bg-indigo-500 cursor-ew-resize flex items-center justify-center transition-colors group/handle z-20" title="ドラッグで表示時間を調整">
+            <div class="w-0.5 h-6 bg-indigo-400/80 rounded-full group-hover/handle:bg-white"></div>
+          </div>
+        `;
+
+        // Card Click Selection
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.delete-frame-card') || e.target.closest('.dup-frame-card') || e.target.closest('.time-step-down') || e.target.closest('.time-step-up') || e.target.closest('.duration-resize-handle')) return;
+          state.selectedFrameIndex = index;
+          state.currentFrameIndex = index;
+          stopPlayback();
+          renderPreview();
+          updateUI();
+        });
+
+        // Quick Delete
+        card.querySelector('.delete-frame-card').addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteFrame(index);
+        });
+
+        // Quick Duplicate
+        card.querySelector('.dup-frame-card').addEventListener('click', (e) => {
+          e.stopPropagation();
+          duplicateFrame(index);
+        });
+
+        // Time +/- Step
+        card.querySelector('.time-step-down').addEventListener('click', (e) => {
+          e.stopPropagation();
+          frame.duration = Math.max(0.1, +(frame.duration - 0.1).toFixed(1));
+          updateUI();
+          if (state.selectedFrameIndex === index) updateInspector();
+        });
+
+        card.querySelector('.time-step-up').addEventListener('click', (e) => {
+          e.stopPropagation();
+          frame.duration = +(frame.duration + 0.1).toFixed(1);
+          updateUI();
+          if (state.selectedFrameIndex === index) updateInspector();
+        });
+
+        // Drag Resize Duration Setup (Mouse & Touch)
+        const resizeHandle = card.querySelector('.duration-resize-handle');
+        
+        const startResize = (clientX) => {
+          state.isResizingDuration = true;
+          state.resizingIndex = index;
+          state.resizeStartX = clientX;
+          state.resizeStartDuration = frame.duration;
+          card.draggable = false;
+          document.body.classList.add('cursor-ew-resize', 'select-none');
+        };
+
+        resizeHandle.addEventListener('mousedown', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          startResize(e.clientX);
+        });
+
+        resizeHandle.addEventListener('touchstart', (e) => {
+          e.stopPropagation();
+          if (e.touches.length > 0) {
+            startResize(e.touches[0].clientX);
+          }
+        }, { passive: true });
+
+        // Drag and Drop reordering events
+        card.addEventListener('dragstart', (e) => {
+          if (state.isResizingDuration) {
+            e.preventDefault();
+            return;
+          }
+          state.draggedIndex = index;
+          card.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+        });
+
+        card.addEventListener('dragend', () => {
+          card.classList.remove('dragging');
+          state.draggedIndex = null;
+        });
+
+        card.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+        });
+
+        card.addEventListener('drop', (e) => {
+          e.preventDefault();
+          if (state.isResizingDuration) return;
+          const targetIndex = parseInt(card.dataset.index);
+          if (state.draggedIndex !== null && state.draggedIndex !== targetIndex) {
+            const movedFrame = state.frames.splice(state.draggedIndex, 1)[0];
+            state.frames.splice(targetIndex, 0, movedFrame);
+            
+            state.selectedFrameIndex = targetIndex;
+            state.currentFrameIndex = targetIndex;
+            updateUI();
+            renderPreview();
+          }
+        });
+
+        elements.timelineList.appendChild(card);
+      });
+    }
+
+    // Global Mouse/Touch Handlers for Timeline Duration Resizing
+    const handleMoveResize = (clientX) => {
+      if (!state.isResizingDuration || state.resizingIndex === null) return;
+
+      const frame = state.frames[state.resizingIndex];
+      if (!frame) return;
+
+      const deltaX = clientX - state.resizeStartX;
+      const newDuration = Math.max(0.1, +(state.resizeStartDuration + deltaX / 40).toFixed(1));
+      
+      frame.duration = newDuration;
+
+      // Update Card Visuals Live
+      const card = elements.timelineList.querySelector(`[data-index="${state.resizingIndex}"]`);
+      if (card) {
+        const durationWidth = Math.min(320, Math.max(110, Math.round(70 + frame.duration * 40)));
+        card.style.width = `${durationWidth}px`;
+
+        const badge = card.querySelector('.frame-duration-badge');
+        if (badge) badge.textContent = `${frame.duration.toFixed(1)}s`;
+
+        const text = card.querySelector('.frame-duration-text');
+        if (text) text.textContent = `${frame.duration.toFixed(1)}s`;
+      }
+
+      if (state.selectedFrameIndex === state.resizingIndex) {
+        updateInspector();
+      }
+      updateTotalDuration();
+    };
+
+    const handleEndResize = () => {
+      if (state.isResizingDuration) {
+        state.isResizingDuration = false;
+        state.resizingIndex = null;
+        document.body.classList.remove('cursor-ew-resize', 'select-none');
+        updateUI();
+      }
+    };
+
+    window.addEventListener('mousemove', (e) => handleMoveResize(e.clientX));
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches.length > 0) handleMoveResize(e.touches[0].clientX);
+    });
+    window.addEventListener('mouseup', handleEndResize);
+    window.addEventListener('touchend', handleEndResize);
+
+    function updateTimelineActiveState() {
+      elements.playbackCounter.textContent = `Frame ${state.currentFrameIndex + 1} / ${state.frames.length}`;
+      
+      const cards = elements.timelineList.querySelectorAll('[data-index]');
+      cards.forEach((card, idx) => {
+        const headerText = card.querySelector('.font-mono');
+        if (headerText) {
+          headerText.className = `font-mono ${idx === state.currentFrameIndex ? 'text-indigo-400 font-bold' : 'text-slate-400'}`;
+          headerText.textContent = `#${idx + 1} ${idx === state.currentFrameIndex ? '▶' : ''}`;
+        }
+      });
+    }
+
+    // Selected Frame Inspector Updates
+    function updateInspector() {
+      if (state.frames.length === 0 || state.selectedFrameIndex >= state.frames.length) {
+        elements.inspectorContent.innerHTML = `<p class="text-slate-500 text-center py-8 text-[11px]">タイムラインで画像を選択すると詳細が表示されます。</p>`;
+        return;
+      }
+
+      const frame = state.frames[state.selectedFrameIndex];
+
+      elements.inspectorContent.innerHTML = `
+        <!-- Frame Preview Card -->
+        <div class="bg-slate-900/60 p-2.5 rounded-xl border border-slate-700/60 text-center">
+          <img src="${frame.src}" class="max-h-36 mx-auto object-contain rounded-lg mb-2">
+          <span class="text-[10px] text-slate-400 font-mono">#${state.selectedFrameIndex + 1} (${frame.width} x ${frame.height} px)</span>
+        </div>
+
+        <!-- Duration Field -->
+        <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-1.5">
+          <label class="block text-slate-300 font-medium">表示時間 (秒)</label>
+          <div class="flex items-center space-x-2">
+            <input type="number" id="inspectorDurationInput" step="0.1" min="0.1" max="60" value="${frame.duration}" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 font-mono text-xs">
+            <span class="text-slate-400 text-xs">秒</span>
+          </div>
+          <p class="text-[10px] text-slate-500 mt-1">※タイムラインカードの右端ドラッグでも設定可能です。</p>
+        </div>
+
+        <!-- Preset Duration Quick Buttons -->
+        <div class="bg-slate-900/60 p-3 rounded-xl border border-slate-700/60 space-y-2">
+          <label class="block text-slate-400 font-medium">表示時間プリセット</label>
+          <div class="grid grid-cols-4 gap-1">
+            <button class="preset-time-btn px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] text-slate-200" data-val="0.5">0.5s</button>
+            <button class="preset-time-btn px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] text-slate-200" data-val="1.0">1.0s</button>
+            <button class="preset-time-btn px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] text-slate-200" data-val="1.5">1.5s</button>
+            <button class="preset-time-btn px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] text-slate-200" data-val="3.0">3.0s</button>
+            <button class="preset-time-btn px-2 py-1 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-[10px] text-slate-200" data-val="5.0">5.0s</button>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="pt-2 border-t border-slate-700/80 space-y-2">
+          <button id="inspectorDuplicateBtn" class="w-full py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 transition">
+            <i class="fa-solid fa-copy"></i>
+            <span>このフレームを複製</span>
+          </button>
+          <button id="inspectorDeleteBtn" class="w-full py-2 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 rounded-lg text-xs font-semibold flex items-center justify-center space-x-1.5 transition">
+            <i class="fa-solid fa-trash-can"></i>
+            <span>このフレームを削除</span>
+          </button>
+        </div>
+      `;
+
+      // Duration Input Listener
+      const durationInput = document.getElementById('inspectorDurationInput');
+      durationInput.addEventListener('change', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val > 0) {
+          frame.duration = val;
+          updateUI();
+        }
+      });
+
+      // Quick Preset Duration Buttons
+      elements.inspectorContent.querySelectorAll('.preset-time-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          frame.duration = parseFloat(btn.dataset.val);
+          updateUI();
+          updateInspector();
+        });
+      });
+
+      // Actions
+      document.getElementById('inspectorDuplicateBtn').addEventListener('click', () => {
+        duplicateFrame(state.selectedFrameIndex);
+      });
+
+      document.getElementById('inspectorDeleteBtn').addEventListener('click', () => {
+        deleteFrame(state.selectedFrameIndex);
+      });
+    }
+
+    function duplicateFrame(index) {
+      const srcFrame = state.frames[index];
+      if (!srcFrame) return;
+
+      const newFrame = {
+        ...srcFrame,
+        id: generateId()
+      };
+
+      state.frames.splice(index + 1, 0, newFrame);
+      state.selectedFrameIndex = index + 1;
+      state.currentFrameIndex = index + 1;
+      updateUI();
+      renderPreview();
+    }
+
+    function deleteFrame(index) {
+      if (state.frames.length === 0) return;
+      state.frames.splice(index, 1);
+      if (state.selectedFrameIndex >= state.frames.length) {
+        state.selectedFrameIndex = Math.max(0, state.frames.length - 1);
+      }
+      state.currentFrameIndex = state.selectedFrameIndex;
+      updateUI();
+      renderPreview();
+    }
+
+    function updateTotalDuration() {
+      const total = state.frames.reduce((sum, f) => sum + f.duration, 0);
+      elements.statTotalDuration.textContent = `${total.toFixed(1)} 秒`;
+      elements.timelineDurationLabel.textContent = `${total.toFixed(1)}s`;
+    }
+
+    function updateUI() {
+      elements.statTotalFrames.textContent = `${state.frames.length} 枚`;
+      updateTotalDuration();
+
+      const dim = getTargetCanvasDimensions();
+      elements.statCanvasResolution.textContent = `${dim.width} x ${dim.height} px`;
+
+      renderTimeline();
+      updateInspector();
+      updateTimelineActiveState();
+    }
+
+    // Canvas Settings Listeners
+    elements.aspectRatioSelect.addEventListener('change', (e) => {
+      state.aspectRatioMode = e.target.value;
+      if (state.aspectRatioMode === 'custom') {
+        elements.customDimensionBox.classList.remove('hidden');
+      } else {
+        elements.customDimensionBox.classList.add('hidden');
+      }
+      updateUI();
+      renderPreview();
+    });
+
+    elements.customWidthInput.addEventListener('change', (e) => {
+      state.customWidth = parseInt(e.target.value) || 800;
+      updateUI();
+      renderPreview();
+    });
+
+    elements.customHeightInput.addEventListener('change', (e) => {
+      state.customHeight = parseInt(e.target.value) || 600;
+      updateUI();
+      renderPreview();
+    });
+
+    elements.fitModeSelect.addEventListener('change', (e) => {
+      state.fitMode = e.target.value;
+      renderPreview();
+    });
+
+    elements.bgColorInput.addEventListener('input', (e) => {
+      state.bgColor = e.target.value;
+      elements.bgColorTextInput.value = e.target.value;
+      renderPreview();
+    });
+
+    elements.bgColorTextInput.addEventListener('change', (e) => {
+      state.bgColor = e.target.value;
+      elements.bgColorInput.value = e.target.value;
+      renderPreview();
+    });
+
+    elements.bgTransparentBtn.addEventListener('click', () => {
+      state.bgColor = 'transparent';
+      elements.bgColorTextInput.value = 'TRANSPARENT';
+      renderPreview();
+    });
+
+    // Export Modal Controls
+    elements.exportModalBtn.addEventListener('click', () => {
+      if (state.frames.length === 0) {
+        alert('書き出す画像を1枚以上読み込んでください。');
+        return;
+      }
+      elements.exportProgressBox.classList.add('hidden');
+      elements.startExportBtn.disabled = false;
+      elements.exportModal.classList.remove('hidden');
+    });
+
+    elements.closeExportModalBtn.addEventListener('click', () => elements.exportModal.classList.add('hidden'));
+    elements.cancelExportBtn.addEventListener('click', () => elements.exportModal.classList.add('hidden'));
+
+    elements.exportScaleSlider.addEventListener('input', (e) => {
+      elements.exportScaleText.textContent = `${Math.round(parseFloat(e.target.value) * 100)}%`;
+    });
+
+    // Toggle WebP Options Visibility based on Selected Export Format
+    document.querySelectorAll('input[name="exportFormat"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        if (e.target.value === 'webp') {
+          elements.webpOptionsBox.classList.remove('hidden');
+        } else {
+          elements.webpOptionsBox.classList.add('hidden');
+        }
+      });
+    });
+
+    // WebP Compression Mode Change Listener (Lossless vs Lossy)
+    document.querySelectorAll('input[name="webpCompression"]').forEach(radio => {
+      radio.addEventListener('change', (e) => {
+        if (e.target.value === 'lossless') {
+          elements.webpQualitySlider.disabled = true;
+          elements.webpQualitySlider.classList.add('opacity-40', 'cursor-not-allowed');
+          elements.webpQualityText.textContent = '100% (可逆 / 無劣化)';
+        } else {
+          elements.webpQualitySlider.disabled = false;
+          elements.webpQualitySlider.classList.remove('opacity-40', 'cursor-not-allowed');
+          elements.webpQualityText.textContent = `${Math.round(parseFloat(elements.webpQualitySlider.value) * 100)}%`;
+        }
+      });
+    });
+
+    elements.webpQualitySlider.addEventListener('input', (e) => {
+      elements.webpQualityText.textContent = `${Math.round(parseFloat(e.target.value) * 100)}%`;
+    });
+
+    // Main Export Orchestrator
+    elements.startExportBtn.addEventListener('click', async () => {
+      if (state.frames.length === 0) return;
+
+      const format = document.querySelector('input[name="exportFormat"]:checked').value;
+      const scale = parseFloat(elements.exportScaleSlider.value);
+      
+      elements.exportProgressBox.classList.remove('hidden');
+      elements.startExportBtn.disabled = true;
+      updateExportProgress(0, '準備中...');
+
+      const targetDim = getTargetCanvasDimensions();
+      const exportWidth = Math.round(targetDim.width * scale);
+      const exportHeight = Math.round(targetDim.height * scale);
+
+      if (format === 'webp') {
+        await exportWebP(exportWidth, exportHeight);
+      } else if (format === 'apng') {
+        await exportAPNG(exportWidth, exportHeight);
+      } else if (format === 'gif') {
+        await exportGIF(exportWidth, exportHeight);
+      }
+    });
+
+    function updateExportProgress(percent, text) {
+      elements.exportProgressBar.style.width = `${percent}%`;
+      elements.exportPercentText.textContent = `${percent}%`;
+      elements.exportStatusText.textContent = text;
+    }
+
+    // 1. WebP Animated Export Engine (Pure JavaScript RIFF/ANMF Assembler)
+    async function exportWebP(width, height) {
+      updateExportProgress(10, 'WebPフレーム生成中...');
+      const framesData = [];
+
+      const isLossless = document.querySelector('input[name="webpCompression"]:checked')?.value === 'lossless';
+      const qualityVal = parseFloat(elements.webpQualitySlider.value);
+      const webpQuality = isLossless ? 1.0 : qualityVal;
+
+      for (let i = 0; i < state.frames.length; i++) {
+        const frame = state.frames[i];
+        const canvas = renderFrameToCanvas(frame, width, height);
+
+        // Convert canvas frame to WebP Blob with user-selected compression type/quality
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', webpQuality));
+        const arrayBuffer = await blob.arrayBuffer();
+        const parsed = parseWebPFrame(arrayBuffer);
+
+        framesData.push({
+          subChunks: parsed.subChunks,
+          hasAlpha: parsed.hasAlpha,
+          duration: Math.max(10, Math.round(frame.duration * 1000)) // Duration in milliseconds
+        });
+
+        const prog = 10 + Math.round(((i + 1) / state.frames.length) * 55);
+        updateExportProgress(prog, `フレーム処理中 (${i + 1}/${state.frames.length})`);
+      }
+
+      updateExportProgress(70, 'Animated WebPを生成中...');
+      await new Promise((r) => setTimeout(r, 20));
+
+      try {
+        const isTransparent = state.bgColor === 'transparent';
+        const animatedWebpBlob = assembleAnimatedWebP(framesData, width, height, isTransparent);
+        updateExportProgress(100, '完了！ダウンロードを開始します');
+        downloadBlob(animatedWebpBlob, `animation_${Date.now()}.webp`);
+      } catch (err) {
+        console.error('WebP Export Error:', err);
+        alert('Animated WebPの生成に失敗しました。');
+      } finally {
+        setTimeout(() => {
+          elements.exportModal.classList.add('hidden');
+        }, 1000);
+      }
+    }
+
+    // Parse single frame WebP buffer to extract valid sub-chunks and alpha flag
+    function parseWebPFrame(arrayBuffer) {
+      const buffer = new Uint8Array(arrayBuffer);
+      if (buffer.length < 12) return { subChunks: [], hasAlpha: false };
+
+      const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+
+      const riff = String.fromCharCode(buffer[0], buffer[1], buffer[2], buffer[3]);
+      const webp = String.fromCharCode(buffer[8], buffer[9], buffer[10], buffer[11]);
+      if (riff !== 'RIFF' || webp !== 'WEBP') return { subChunks: [], hasAlpha: false };
+
+      const subChunks = [];
+      let hasAlpha = false;
+
+      let offset = 12;
+      while (offset + 8 <= buffer.length) {
+        const fourCC = String.fromCharCode(buffer[offset], buffer[offset + 1], buffer[offset + 2], buffer[offset + 3]);
+        const chunkSize = view.getUint32(offset + 4, true);
+        const paddedChunkSize = chunkSize + (chunkSize % 2 !== 0 ? 1 : 0);
+        const totalChunkLen = 8 + paddedChunkSize;
+
+        if (offset + totalChunkLen > buffer.length) break;
+
+        if (fourCC === 'VP8X') {
+          if (chunkSize >= 1) {
+            const flags = buffer[offset + 8];
+            if (flags & 0x10) { // Alpha flag bit
+              hasAlpha = true;
+            }
+          }
+        } else if (fourCC === 'VP8 ' || fourCC === 'VP8L' || fourCC === 'ALPH') {
+          const chunkData = buffer.subarray(offset, offset + totalChunkLen);
+          subChunks.push(chunkData);
+          if (fourCC === 'ALPH') {
+            hasAlpha = true;
+          }
+        }
+
+        offset += totalChunkLen;
+      }
+
+      return { subChunks, hasAlpha };
+    }
+
+    // Pure JS Assembler for Animated WebP (RIFF VP8X + ANIM + ANMF chunks)
+    function assembleAnimatedWebP(framesData, width, height, isTransparent) {
+      const chunks = [];
+      let globalHasAlpha = isTransparent;
+
+      for (const frame of framesData) {
+        if (frame.hasAlpha) globalHasAlpha = true;
+      }
+
+      // 1. VP8X Chunk Header (18 bytes total)
+      const vp8xChunk = new Uint8Array(18);
+      vp8xChunk.set([0x56, 0x50, 0x38, 0x58]); // 'VP8X'
+      setUint32LE(vp8xChunk, 4, 10); // Chunk Payload Size = 10
+      vp8xChunk[8] = globalHasAlpha ? 0x12 : 0x02; // Flags: Bit 1 (0x02) = Animation, Bit 4 (0x10) = Alpha
+      setUint24LE(vp8xChunk, 12, width - 1);
+      setUint24LE(vp8xChunk, 15, height - 1);
+      chunks.push(vp8xChunk);
+
+      // 2. ANIM Chunk Header (14 bytes total)
+      const animChunk = new Uint8Array(14);
+      animChunk.set([0x41, 0x4E, 0x49, 0x4D]); // 'ANIM'
+      setUint32LE(animChunk, 4, 6); // Chunk Payload Size = 6
+      setUint32LE(animChunk, 8, 0x00000000); // BG Color (BGRA)
+      setUint16LE(animChunk, 12, 0); // Loop count (0 = infinite)
+      chunks.push(animChunk);
+
+      // 3. ANMF Chunks (One for each frame)
+      for (const frame of framesData) {
+        let subChunksTotalLen = 0;
+        for (const sc of frame.subChunks) {
+          subChunksTotalLen += sc.length;
+        }
+
+        const anmfHeader = new Uint8Array(24);
+        anmfHeader.set([0x41, 0x4E, 0x4D, 0x46]); // 'ANMF'
+        
+        const totalAnmfPayloadSize = 16 + subChunksTotalLen;
+        setUint32LE(anmfHeader, 4, totalAnmfPayloadSize);
+        
+        setUint24LE(anmfHeader, 8, 0); // Frame X = 0
+        setUint24LE(anmfHeader, 11, 0); // Frame Y = 0
+        setUint24LE(anmfHeader, 14, width - 1); // Frame Width - 1
+        setUint24LE(anmfHeader, 17, height - 1); // Frame Height - 1
+        setUint24LE(anmfHeader, 20, frame.duration); // Duration in ms
+        anmfHeader[23] = 0x02; // Flags: Blending (0x02 = Overwrite), Disposal (0x00 = Do not dispose)
+
+        chunks.push(anmfHeader);
+        for (const sc of frame.subChunks) {
+          chunks.push(sc);
+        }
+
+        // Add padding byte if ANMF payload size is odd
+        if (totalAnmfPayloadSize % 2 !== 0) {
+          chunks.push(new Uint8Array([0x00]));
+        }
+      }
+
+      // Calculate Total RIFF Payload Size
+      let totalRiffPayloadSize = 4; // 'WEBP'
+      for (const c of chunks) {
+        totalRiffPayloadSize += c.length;
+      }
+
+      // 4. Main RIFF Header (12 bytes)
+      const riffHeader = new Uint8Array(12);
+      riffHeader.set([0x52, 0x49, 0x46, 0x46]); // 'RIFF'
+      setUint32LE(riffHeader, 4, totalRiffPayloadSize);
+      riffHeader.set([0x57, 0x45, 0x42, 0x50], 8); // 'WEBP'
+
+      return new Blob([riffHeader, ...chunks], { type: 'image/webp' });
+    }
+
+    function setUint16LE(arr, offset, val) {
+      arr[offset] = val & 0xFF;
+      arr[offset + 1] = (val >> 8) & 0xFF;
+    }
+
+    function setUint24LE(arr, offset, val) {
+      arr[offset] = val & 0xFF;
+      arr[offset + 1] = (val >> 8) & 0xFF;
+      arr[offset + 2] = (val >> 16) & 0xFF;
+    }
+
+    function setUint32LE(arr, offset, val) {
+      arr[offset] = val & 0xFF;
+      arr[offset + 1] = (val >> 8) & 0xFF;
+      arr[offset + 2] = (val >> 16) & 0xFF;
+      arr[offset + 3] = (val >> 24) & 0xFF;
+    }
+
+    // 2. APNG Export Engine (UPNG.js)
+    async function exportAPNG(width, height) {
+      updateExportProgress(10, 'APNGフレーム抽出中...');
+      const rgbaBuffers = [];
+      const delays = [];
+
+      for (let i = 0; i < state.frames.length; i++) {
+        const frame = state.frames[i];
+        const canvas = renderFrameToCanvas(frame, width, height);
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.getImageData(0, 0, width, height);
+        rgbaBuffers.push(imgData.data.buffer);
+        delays.push(Math.max(10, Math.round(frame.duration * 1000)));
+
+        const prog = 10 + Math.round(((i + 1) / state.frames.length) * 60);
+        updateExportProgress(prog, `フレーム処理中 (${i + 1}/${state.frames.length})`);
+      }
+
+      updateExportProgress(75, 'APNGファイルをエンコード中...');
+      await new Promise((r) => setTimeout(r, 30));
+
+      try {
+        if (window.UPNG) {
+          const apngBuffer = UPNG.encode(rgbaBuffers, width, height, 0, delays);
+          const blob = new Blob([apngBuffer], { type: 'image/png' });
+          updateExportProgress(100, '完了！ダウンロードを開始します');
+          downloadBlob(blob, `animation_${Date.now()}.png`);
+        } else {
+          throw new Error('UPNG.js ライブラリが検出されませんでした。');
+        }
+      } catch (err) {
+        console.error('APNG Export Error:', err);
+        alert('APNGの生成に失敗しました: ' + err.message);
+      } finally {
+        setTimeout(() => {
+          elements.exportModal.classList.add('hidden');
+        }, 1000);
+      }
+    }
+
+    // 3. GIF Export Engine (Pure JavaScript Encoder with NeuQuant & LZW)
+    async function exportGIF(width, height) {
+      updateExportProgress(10, 'GIFエンコード準備中...');
+      await new Promise((r) => setTimeout(r, 20));
+
+      try {
+        const bytes = [];
+
+        // Header: GIF89a
+        bytes.push(0x47, 0x49, 0x46, 0x38, 0x39, 0x61);
+
+        // Logical Screen Descriptor
+        bytes.push(width & 0xff, (width >> 8) & 0xff);
+        bytes.push(height & 0xff, (height >> 8) & 0xff);
+        bytes.push(0x70); // Global color table flag = 0, color resolution = 8
+        bytes.push(0x00); // Background color index
+        bytes.push(0x00); // Pixel aspect ratio
+
+        // NETSCAPE2.0 Application Extension for Infinite Looping
+        bytes.push(0x21, 0xff, 0x0b);
+        const netscape = [0x4e, 0x45, 0x54, 0x53, 0x43, 0x41, 0x50, 0x45, 0x32, 0x2e, 0x30]; // "NETSCAPE2.0"
+        bytes.push(...netscape);
+        bytes.push(0x03, 0x01, 0x00, 0x00, 0x00); // Loop count = 0 (infinite)
+
+        for (let i = 0; i < state.frames.length; i++) {
+          const frame = state.frames[i];
+          const canvas = renderFrameToCanvas(frame, width, height);
+          const ctx = canvas.getContext('2d');
+          const imgData = ctx.getImageData(0, 0, width, height);
+          const rgba = imgData.data;
+
+          // Palette quantization using NeuQuant
+          const nq = new NeuQuant(rgba, 10);
+          nq.init();
+          const palette = nq.getPalette();
+
+          const numPixels = width * height;
+          const indexedPixels = new Uint8Array(numPixels);
+          let hasAlpha = false;
+          let transparentIndex = 255;
+
+          for (let p = 0; p < numPixels; p++) {
+            const offset = p * 4;
+            const r = rgba[offset];
+            const g = rgba[offset + 1];
+            const b = rgba[offset + 2];
+            const a = rgba[offset + 3];
+
+            if (a < 128) {
+              hasAlpha = true;
+              indexedPixels[p] = transparentIndex;
+            } else {
+              let idx = nq.lookup(b, g, r);
+              if (hasAlpha && idx === transparentIndex) idx = 254;
+              indexedPixels[p] = idx;
+            }
+          }
+
+          // Delay in 10ms units (e.g. 1.5s = 150)
+          const delay10ms = Math.max(1, Math.round(frame.duration * 100));
+
+          // Graphic Control Extension Block
+          bytes.push(0x21, 0xf9, 0x04);
+          const disposal = hasAlpha ? 2 : 1; // 2 = Restore to background, 1 = Do not dispose
+          const flags = (disposal << 2) | (hasAlpha ? 1 : 0);
+          bytes.push(flags);
+          bytes.push(delay10ms & 0xff, (delay10ms >> 8) & 0xff);
+          bytes.push(hasAlpha ? transparentIndex : 0);
+          bytes.push(0x00);
+
+          // Image Descriptor
+          bytes.push(0x2c);
+          bytes.push(0x00, 0x00, 0x00, 0x00); // Left, Top = 0
+          bytes.push(width & 0xff, (width >> 8) & 0xff);
+          bytes.push(height & 0xff, (height >> 8) & 0xff);
+          bytes.push(0x87); // Local color table = true, 256 colors
+
+          // Local Color Table (768 bytes)
+          for (let c = 0; c < 768; c++) {
+            bytes.push(palette[c]);
+          }
+
+          // LZW Compressed Pixel Data
+          const minCodeSize = 8;
+          bytes.push(minCodeSize);
+          const lzwData = encodeGIFLZW(width, height, indexedPixels, minCodeSize);
+          for (let b = 0; b < lzwData.length; b++) {
+            bytes.push(lzwData[b]);
+          }
+
+          const prog = 10 + Math.round(((i + 1) / state.frames.length) * 80);
+          updateExportProgress(prog, `GIFエンコード中 (${i + 1}/${state.frames.length})`);
+          await new Promise((r) => setTimeout(r, 10)); // Yield to UI thread
+        }
+
+        // GIF Trailer Terminator
+        bytes.push(0x3b);
+
+        const gifBlob = new Blob([new Uint8Array(bytes)], { type: 'image/gif' });
+        updateExportProgress(100, '完了！ダウンロードを開始します');
+        downloadBlob(gifBlob, `animation_${Date.now()}.gif`);
+      } catch (err) {
+        console.error('GIF Export Error:', err);
+        alert('GIFのエンコード中にエラーが発生しました: ' + err.message);
+      } finally {
+        setTimeout(() => {
+          elements.exportModal.classList.add('hidden');
+        }, 1000);
+      }
+    }
+
+    // Helper: File Download
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // Initialize View
+    renderPreview();
+    updateUI();
+  </script>
+</body>
+</html>

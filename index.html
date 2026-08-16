@@ -69,7 +69,9 @@
 
       <!-- フッター情報 -->
       <div class="p-3 border-t border-slate-800 text-[10px] text-slate-500 text-center">
-        Powered by <a href="https://gemini.google.com/">Gemini</a>
+        Created with <strong><a href="https://gemini.google.com/"
+            style="text-decoration: underline;">Gemini</a></strong>.<br>
+        source: <a href="https://github.com/irinanpic/webtools" style="text-decoration: underline;">GitHub</a>
       </div>
     </aside>
 
@@ -128,10 +130,24 @@
       },
       {
         id: 'transparent-png-tool',
-        title: ' 透過画像ジェネレーター',
+        title: '透過画像ジェネレーター',
         icon: 'fa-eraser',
         path: 'transparent_png_tool_v3.html', // 実際のファイルパスに合わせて変更してください
         desc: '透過設定ツール'
+      },
+      {
+        id: 'Animation_maker',
+        title: 'アニメーション画像メーカー',
+        icon: 'fa-film',
+        path: 'Animation_maker.html', // 実際のファイルパスに合わせて変更してください
+        desc: '複数の画像からアニメーション画像を生成するツール'
+      },
+      {
+        id: 'interactive_poisson_blending_studio',
+        title: '画像ブレンダー',
+        icon: 'fa-wand-magic-sparkles',
+        path: 'interactive_poisson_blending_studio.html', // 実際のファイルパスに合わせて変更してください
+        desc: '簡易画像合成ツール'
       }
     ];
 
@@ -154,8 +170,8 @@
         const btn = document.createElement('button');
 
         btn.className = `w-full text-left p-3 rounded-xl border transition-all flex items-start space-x-3 group ${isActive
-            ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-200 shadow-md'
-            : 'bg-slate-950/40 border-slate-800/80 hover:bg-slate-800/60 hover:border-slate-700 text-slate-300'
+          ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-200 shadow-md'
+          : 'bg-slate-950/40 border-slate-800/80 hover:bg-slate-800/60 hover:border-slate-700 text-slate-300'
           }`;
 
         btn.innerHTML = `
