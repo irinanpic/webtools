@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="ja" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>画像畳み込み処理ツール (Convolution Tool)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Inter Font -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    /* Checkerboard pattern for transparent canvas preview */
+    .bg-checkerboard {
+      background-color: #0f172a;
+      background-image: 
+        linear-gradient(45deg, #1e293b 25%, transparent 25%), 
+        linear-gradient(-45deg, #1e293b 25%, transparent 25%), 
+        linear-gradient(45deg, transparent 75%, #1e293b 75%), 
+        linear-gradient(-45deg, transparent 75%, #1e293b 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    }
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+    /* Number input spin hide for kernel inputs */
+    input[type=number]::-webkit-inner-spin-button, 
+    input[type=number]::-webkit-outer-spin-button { 
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type=number] {
+      -moz-appearance: textfield;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden select-none">
+
+  <!-- Top Navigation Header -->
+  <header class="h-14 bg-slate-800/90 border-b border-slate-700/80 px-4 flex items-center justify-between z-20 shrink-0 backdrop-blur-md">
+    <div class="flex items-center space-x-3">
+      <div class="bg-indigo-600 p-2 rounded-lg text-white shadow-lg shadow-indigo-500/30">
+        <i class="fa-solid fa-sliders text-lg"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-sm tracking-wide text-slate-100">画像畳み込み処理ツール</h1>
+        <p class="text-[10px] text-slate-400">2D Image Convolution & Kernel Matrix Workbench</p>
+      </div>
+    </div>
+
+    <!-- Actions & File Export Header -->
+    <div class="flex items-center space-x-2">
+      <!-- Undo / Redo -->
+      <button id="btnUndo" disabled class="p-2 bg-slate-700/50 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg transition text-xs flex items-center space-x-1" title="元に戻す (Ctrl+Z)">
+        <i class="fa-solid fa-rotate-left"></i>
+        <span class="hidden sm:inline">戻る</span>
+      </button>
+      <button id="btnRedo" disabled class="p-2 bg-slate-700/50 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg transition text-xs flex items-center space-x-1" title="やり直す (Ctrl+Y)">
+        <i class="fa-solid fa-rotate-right"></i>
+        <span class="hidden sm:inline">進む</span>
+      </button>
+
+      <div class="h-4 w-px bg-slate-700 mx-1"></div>
+
+      <!-- Export Format Selector -->
+      <select id="exportFormat" class="bg-slate-900 border border-slate-700 text-xs rounded-lg px-2 py-1.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+        <option value="image/png">PNG (.png)</option>
+        <option value="image/jpeg">JPEG (.jpg)</option>
+        <option value="image/webp">WEBP (.webp)</option>
+      </select>
+
+      <!-- Save Button -->
+      <button id="btnSave" disabled class="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-medium text-xs rounded-lg transition shadow-md shadow-indigo-600/30 flex items-center space-x-1.5">
+        <i class="fa-solid fa-download"></i>
+        <span>画像を保存</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <div class="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+
+    <!-- Left Panel: Controls & Settings -->
+    <aside class="w-full md:w-80 lg:w-96 bg-slate-800 border-r border-slate-700/80 flex flex-col shrink-0 overflow-y-auto p-4 space-y-5 z-10">
+
+      <!-- 1. File Upload Section -->
+      <section class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-700/60 space-y-2">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="fa-regular fa-image text-indigo-400"></i> 画像読み込み
+          </label>
+          <button id="btnClearImg" class="hidden text-[11px] text-rose-400 hover:text-rose-300 transition">リセット</button>
+        </div>
+        <div id="uploadDropArea" class="border-2 border-dashed border-slate-700 hover:border-indigo-500 transition rounded-lg p-4 text-center cursor-pointer bg-slate-800/40">
+          <input type="file" id="fileInput" accept="image/*" class="hidden">
+          <i class="fa-solid fa-cloud-arrow-up text-2xl text-slate-400 mb-1"></i>
+          <p class="text-xs text-slate-300 font-medium">クリックして画像を選択</p>
+          <p class="text-[10px] text-slate-500 mt-0.5">または画像をドラッグ＆ドロップ</p>
+        </div>
+      </section>
+
+      <!-- 2. Kernel Matrix Grid Settings -->
+      <section class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-700/60 space-y-3">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="fa-solid fa-table-cells text-indigo-400"></i> カーネル設定
+          </label>
+          <!-- Grid Size Toggle -->
+          <div class="flex bg-slate-800 rounded-lg p-0.5 border border-slate-700 text-[11px]">
+            <button id="btnGrid3" class="px-2 py-0.5 rounded-md font-medium transition bg-indigo-600 text-white">3x3</button>
+            <button id="btnGrid5" class="px-2 py-0.5 rounded-md font-medium text-slate-400 hover:text-slate-200 transition">5x5</button>
+          </div>
+        </div>
+
+        <!-- Presets Dropdown -->
+        <div>
+          <label for="presetSelect" class="block text-[11px] text-slate-400 mb-1">フィルタ プリセット</label>
+          <select id="presetSelect" class="w-full bg-slate-800 border border-slate-700 text-xs rounded-lg px-2.5 py-1.5 text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <!-- Populated via JS -->
+          </select>
+        </div>
+
+        <!-- Interactive Kernel Inputs Grid -->
+        <div class="space-y-1">
+          <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+            <span>行列値 (空欄は 0 処理)</span>
+            <button id="btnClearGrid" class="text-slate-400 hover:text-slate-200 transition">クリア</button>
+          </div>
+          <div id="kernelGridContainer" class="grid gap-1 bg-slate-950 p-2 rounded-lg border border-slate-800">
+            <!-- Dynamic Grid Inputs Generated via JavaScript -->
+          </div>
+        </div>
+
+        <!-- Math Modifiers: Normalize & Offset -->
+        <div class="space-y-2 pt-1 border-t border-slate-800">
+          <div class="flex items-center justify-between">
+            <label for="chkNormalize" class="text-xs text-slate-300 flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" id="chkNormalize" class="rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5">
+              自動正規化 (合計で割る)
+            </label>
+          </div>
+          <div class="flex items-center justify-between text-xs text-slate-300">
+            <span>オフセット (バイアス):</span>
+            <input type="number" id="inputBias" value="0" step="1" class="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-right text-xs focus:outline-none focus:border-indigo-500">
+          </div>
+        </div>
+
+        <!-- Apply Convolution Button -->
+        <button id="btnApply" disabled class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-medium text-xs rounded-lg transition shadow-md shadow-indigo-600/30 flex items-center justify-center space-x-1.5">
+          <i class="fa-solid fa-play"></i>
+          <span>畳み込み演算を実行</span>
+        </button>
+      </section>
+
+      <!-- 3. Mask Selection Tools -->
+      <section class="bg-slate-900/60 p-3.5 rounded-xl border border-slate-700/60 space-y-3">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+            <i class="fa-solid fa-paint-brush text-indigo-400"></i> マーカー範囲選択
+          </label>
+          <span class="text-[10px] bg-slate-800 border border-slate-700 text-slate-400 px-1.5 py-0.5 rounded">非破壊</span>
+        </div>
+
+        <!-- Mask Application Mode -->
+        <div class="space-y-1.5 text-xs">
+          <label class="block text-[11px] text-slate-400">演算の適用範囲:</label>
+          <div class="grid grid-cols-2 gap-1.5">
+            <button id="btnModeAll" class="py-1.5 px-2 bg-indigo-600 text-white font-medium text-[11px] rounded-lg transition border border-indigo-500">画像全体</button>
+            <button id="btnModeMask" class="py-1.5 px-2 bg-slate-800 text-slate-300 hover:bg-slate-700 text-[11px] rounded-lg transition border border-slate-700">マーカー選択領域のみ</button>
+          </div>
+        </div>
+
+        <!-- Brush Controls -->
+        <div id="maskControls" class="space-y-2 pt-2 border-t border-slate-800 opacity-50 pointer-events-none transition-opacity">
+          <div class="flex items-center justify-between text-xs text-slate-300">
+            <span>ブラシサイズ: <span id="brushSizeVal" class="font-mono text-indigo-400">30</span>px</span>
+            <input type="range" id="inputBrushSize" min="5" max="150" value="30" class="w-28 accent-indigo-500">
+          </div>
+          <div class="flex space-x-2">
+            <button id="btnClearMask" class="flex-1 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] rounded border border-slate-700 transition">
+              <i class="fa-solid fa-eraser mr-1"></i>マスク解除
+            </button>
+            <button id="btnInvertMask" class="flex-1 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] rounded border border-slate-700 transition">
+              <i class="fa-solid fa-arrows-rotate mr-1"></i>反転
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Info Footer -->
+      <div class="mt-auto pt-2 text-[11px] text-slate-500 space-y-1">
+        <p>※ 畳み込み結果が 0 未満は 0、255 以上は 255 に固定（クランピング）されます。</p>
+        <p>※ マーカー描画色は範囲指定専用であり、画像出力時には影響しません。</p>
+      </div>
+    </aside>
+
+    <!-- Right Preview Display Area -->
+    <main class="flex-1 relative bg-slate-950 flex flex-col items-center justify-center p-4 overflow-hidden bg-checkerboard" id="dropZone">
+      
+      <!-- Canvas Wrapper Container (Maintains original image aspect ratio) -->
+      <div id="canvasWrapper" class="relative max-w-full max-h-full flex items-center justify-center shadow-2xl rounded-lg overflow-hidden border border-slate-800/80">
+        
+        <!-- Placeholder Empty State -->
+        <div id="placeholderState" class="flex flex-col items-center justify-center text-center p-8 text-slate-500 select-none">
+          <div class="w-16 h-16 rounded-2xl bg-slate-800/80 border border-slate-700 flex items-center justify-center mb-3 text-slate-400">
+            <i class="fa-solid fa-image text-3xl"></i>
+          </div>
+          <p class="text-sm font-medium text-slate-300">画像が読み込まれていません</p>
+          <p class="text-xs text-slate-500 mt-1 max-w-xs">画像をドラッグ＆ドロップするか、左側パネルのファイルダイアログからアップロードしてください。</p>
+        </div>
+
+        <!-- Main Display Canvases (Stacked absolute) -->
+        <!-- Processed Result Image Canvas -->
+        <canvas id="imageCanvas" class="hidden block max-w-full max-h-[80vh] object-contain"></canvas>
+        <!-- Overlay Canvas for Mask Marker Visualization -->
+        <canvas id="overlayCanvas" class="hidden absolute inset-0 pointer-events-auto cursor-crosshair max-w-full max-h-[80vh] object-contain"></canvas>
+      </div>
+
+      <!-- Preview Floating Tools Bar -->
+      <div id="previewTools" class="hidden absolute bottom-6 bg-slate-900/90 border border-slate-700/80 backdrop-blur-md px-3 py-1.5 rounded-full flex items-center space-x-3 text-xs text-slate-300 shadow-xl">
+        <span id="imageDimensions" class="font-mono text-[11px] text-slate-400">0 x 0 px</span>
+        <div class="h-3 w-px bg-slate-700"></div>
+        <button id="btnHoldOriginal" class="hover:text-indigo-400 transition flex items-center space-x-1 select-none">
+          <i class="fa-solid fa-eye"></i>
+          <span>長押しで元画像と比較</span>
+        </button>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // Application State Management
+    const state = {
+      gridSize: 3, // 3x3 or 5x5
+      imageLoaded: false,
+      originalImageData: null,
+      currentImageData: null,
+      history: [], // Stack for Undo
+      redoStack: [], // Stack for Redo
+      maxHistory: 15,
+      maskMode: 'all', // 'all' or 'mask'
+      isDrawingMask: false,
+      brushSize: 30,
+      imageWidth: 0,
+      imageHeight: 0
+    };
+
+    // Offscreen Canvas logic for full resolution operations
+    const offCanvas = document.createElement('canvas');
+    const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+
+    const maskCanvas = document.createElement('canvas');
+    const maskCtx = maskCanvas.getContext('2d', { willReadFrequently: true });
+
+    // DOM Element References
+    const elements = {
+      fileInput: document.getElementById('fileInput'),
+      uploadDropArea: document.getElementById('uploadDropArea'),
+      dropZone: document.getElementById('dropZone'),
+      btnClearImg: document.getElementById('btnClearImg'),
+      btnGrid3: document.getElementById('btnGrid3'),
+      btnGrid5: document.getElementById('btnGrid5'),
+      presetSelect: document.getElementById('presetSelect'),
+      kernelGridContainer: document.getElementById('kernelGridContainer'),
+      btnClearGrid: document.getElementById('btnClearGrid'),
+      chkNormalize: document.getElementById('chkNormalize'),
+      inputBias: document.getElementById('inputBias'),
+      btnApply: document.getElementById('btnApply'),
+      btnModeAll: document.getElementById('btnModeAll'),
+      btnModeMask: document.getElementById('btnModeMask'),
+      maskControls: document.getElementById('maskControls'),
+      inputBrushSize: document.getElementById('inputBrushSize'),
+      brushSizeVal: document.getElementById('brushSizeVal'),
+      btnClearMask: document.getElementById('btnClearMask'),
+      btnInvertMask: document.getElementById('btnInvertMask'),
+      placeholderState: document.getElementById('placeholderState'),
+      imageCanvas: document.getElementById('imageCanvas'),
+      overlayCanvas: document.getElementById('overlayCanvas'),
+      previewTools: document.getElementById('previewTools'),
+      imageDimensions: document.getElementById('imageDimensions'),
+      btnHoldOriginal: document.getElementById('btnHoldOriginal'),
+      btnUndo: document.getElementById('btnUndo'),
+      btnRedo: document.getElementById('btnRedo'),
+      exportFormat: document.getElementById('exportFormat'),
+      btnSave: document.getElementById('btnSave')
+    };
+
+    // Kernel Presets Definition
+    const presets = {
+      identity: {
+        name: 'アイデンティティ (変換なし)',
+        size: 3,
+        matrix: [0, 0, 0, 0, 1, 0, 0, 0, 0],
+        normalize: false
+      },
+      blurSimple: {
+        name: '単純ぼかし (Box Blur 3x3)',
+        size: 3,
+        matrix: [1, 1, 1, 1, 1, 1, 1, 1, 1],
+        normalize: true
+      },
+      gaussian3: {
+        name: 'ガウシアンぼかし (Gaussian 3x3)',
+        size: 3,
+        matrix: [1, 2, 1, 2, 4, 2, 1, 2, 1],
+        normalize: true
+      },
+      gaussian5: {
+        name: 'ガウシアンぼかし (Gaussian 5x5)',
+        size: 5,
+        matrix: [
+          1,  4,  7,  4, 1,
+          4, 16, 26, 16, 4,
+          7, 26, 41, 26, 7,
+          4, 16, 26, 16, 4,
+          1,  4,  7,  4, 1
+        ],
+        normalize: true
+      },
+      sharpen: {
+        name: '鮮鋭化 (Sharpen)',
+        size: 3,
+        matrix: [0, -1, 0, -1, 5, -1, 0, -1, 0],
+        normalize: false
+      },
+      laplacian: {
+        name: 'ラプラシアン (Laplacian エッジ検出)',
+        size: 3,
+        matrix: [0, 1, 0, 1, -4, 1, 0, 1, 0],
+        normalize: false
+      },
+      sobelH: {
+        name: 'Sobel フィルタ (水平エッジ)',
+        size: 3,
+        matrix: [-1, 0, 1, -2, 0, 2, -1, 0, 1],
+        normalize: false
+      },
+      sobelV: {
+        name: 'Sobel フィルタ (垂直エッジ)',
+        size: 3,
+        matrix: [-1, -2, -1, 0, 0, 0, 1, 2, 1],
+        normalize: false
+      },
+      emboss: {
+        name: 'エンボス (Emboss 浮き彫り)',
+        size: 3,
+        matrix: [-2, -1, 0, -1, 1, 1, 0, 1, 2],
+        normalize: false
+      },
+      ridge: {
+        name: 'エッジ抽出 (Ridge Detection)',
+        size: 3,
+        matrix: [-1, -1, -1, -1, 8, -1, -1, -1, -1],
+        normalize: false
+      }
+    };
+
+    // Populate Presets Dropdown
+    function updatePresetDropdown() {
+      elements.presetSelect.innerHTML = '<option value="custom">カスタム設定</option>';
+      for (const [key, p] of Object.entries(presets)) {
+        if (p.size === state.gridSize) {
+          const opt = document.createElement('option');
+          opt.value = key;
+          opt.textContent = p.name;
+          elements.presetSelect.appendChild(opt);
+        }
+      }
+    }
+
+    // Render Kernel Grid Inputs
+    function renderKernelGrid(values = null) {
+      const size = state.gridSize;
+      elements.kernelGridContainer.style.gridTemplateColumns = `repeat(${size}, minmax(0, 1fr))`;
+      elements.kernelGridContainer.innerHTML = '';
+
+      for (let i = 0; i < size * size; i++) {
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.step = 'any';
+        input.className = 'w-full h-9 text-center bg-slate-800 border border-slate-700 rounded text-slate-100 font-mono text-xs focus:outline-none focus:border-indigo-500 focus:bg-slate-900 transition';
+        input.value = values && values[i] !== undefined ? values[i] : 0;
+        input.dataset.index = i;
+        
+        // Listen for manual edits
+        input.addEventListener('input', () => {
+          elements.presetSelect.value = 'custom';
+        });
+
+        elements.kernelGridContainer.appendChild(input);
+      }
+    }
+
+    // Read values from grid input elements
+    function getKernelMatrix() {
+      const inputs = elements.kernelGridContainer.querySelectorAll('input');
+      const matrix = [];
+      inputs.forEach(input => {
+        const val = parseFloat(input.value);
+        matrix.push(isNaN(val) ? 0 : val);
+      });
+      return matrix;
+    }
+
+    // Switch Grid Size (3x3 / 5x5)
+    function setGridSize(size) {
+      state.gridSize = size;
+      if (size === 3) {
+        elements.btnGrid3.className = 'px-2 py-0.5 rounded-md font-medium transition bg-indigo-600 text-white';
+        elements.btnGrid5.className = 'px-2 py-0.5 rounded-md font-medium text-slate-400 hover:text-slate-200 transition';
+      } else {
+        elements.btnGrid5.className = 'px-2 py-0.5 rounded-md font-medium transition bg-indigo-600 text-white';
+        elements.btnGrid3.className = 'px-2 py-0.5 rounded-md font-medium text-slate-400 hover:text-slate-200 transition';
+      }
+      updatePresetDropdown();
+      renderKernelGrid();
+    }
+
+    // Load Image file
+    function loadImageFromFile(file) {
+      if (!file || !file.type.startsWith('image/')) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          state.imageWidth = img.width;
+          state.imageHeight = img.height;
+
+          // Set offscreen canvas dimensions
+          offCanvas.width = img.width;
+          offCanvas.height = img.height;
+          offCtx.drawImage(img, 0, 0);
+
+          state.originalImageData = offCtx.getImageData(0, 0, img.width, img.height);
+          state.currentImageData = offCtx.getImageData(0, 0, img.width, img.height);
+
+          // Reset mask canvas
+          maskCanvas.width = img.width;
+          maskCanvas.height = img.height;
+          clearMask();
+
+          // Reset history
+          state.history = [];
+          state.redoStack = [];
+          updateUndoRedoButtons();
+
+          // UI updates
+          state.imageLoaded = true;
+          elements.placeholderState.classList.add('hidden');
+          elements.imageCanvas.classList.remove('hidden');
+          elements.overlayCanvas.classList.remove('hidden');
+          elements.previewTools.classList.remove('hidden');
+          elements.btnClearImg.classList.remove('hidden');
+          elements.btnApply.disabled = false;
+          elements.btnSave.disabled = false;
+          elements.imageDimensions.textContent = `${img.width} x ${img.height} px`;
+
+          renderCanvases();
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
+    // Render Canvas output to main screen
+    function renderCanvases() {
+      if (!state.imageLoaded) return;
+
+      // Update main result canvas
+      elements.imageCanvas.width = state.imageWidth;
+      elements.imageCanvas.height = state.imageHeight;
+      const ctx = elements.imageCanvas.getContext('2d');
+      ctx.putImageData(state.currentImageData, 0, 0);
+
+      // Update overlay visualizer canvas
+      elements.overlayCanvas.width = state.imageWidth;
+      elements.overlayCanvas.height = state.imageHeight;
+      drawOverlayMask();
+    }
+
+    // Draw Overlay Mask (semi-transparent red overlay)
+    function drawOverlayMask() {
+      if (!state.imageLoaded) return;
+      const oCtx = elements.overlayCanvas.getContext('2d');
+      oCtx.clearRect(0, 0, state.imageWidth, state.imageHeight);
+
+      if (state.maskMode === 'mask') {
+        oCtx.save();
+        oCtx.fillStyle = 'rgba(239, 68, 68, 0.35)'; // semi-transparent red
+        oCtx.drawImage(maskCanvas, 0, 0);
+        oCtx.globalCompositeOperation = 'source-in';
+        oCtx.fillRect(0, 0, state.imageWidth, state.imageHeight);
+        oCtx.restore();
+      }
+    }
+
+    // Clear Mask
+    function clearMask() {
+      maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+      drawOverlayMask();
+    }
+
+    // Invert Mask
+    function invertMask() {
+      if (!state.imageLoaded) return;
+      const imgData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+      const data = imgData.data;
+      for (let i = 3; i < data.length; i += 4) {
+        data[i] = data[i] > 0 ? 0 : 255;
+      }
+      maskCtx.putImageData(imgData, 0, 0);
+      drawOverlayMask();
+    }
+
+    // Mask Drawing Coordinates Converter
+    function getCanvasCoords(e) {
+      const rect = elements.overlayCanvas.getBoundingClientRect();
+      const scaleX = state.imageWidth / rect.width;
+      const scaleY = state.imageHeight / rect.height;
+
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+      return {
+        x: (clientX - rect.left) * scaleX,
+        y: (clientY - rect.top) * scaleY
+      };
+    }
+
+    // Mask Pointer Event Handlers
+    function startDrawing(e) {
+      if (!state.imageLoaded || state.maskMode !== 'mask') return;
+      state.isDrawingMask = true;
+      drawMaskStroke(e);
+    }
+
+    function drawMaskStroke(e) {
+      if (!state.isDrawingMask) return;
+      const coords = getCanvasCoords(e);
+
+      maskCtx.fillStyle = '#ffffff';
+      maskCtx.strokeStyle = '#ffffff';
+      maskCtx.lineWidth = state.brushSize * (state.imageWidth / elements.overlayCanvas.getBoundingClientRect().width);
+      maskCtx.lineCap = 'round';
+      maskCtx.lineJoin = 'round';
+
+      maskCtx.beginPath();
+      maskCtx.arc(coords.x, coords.y, maskCtx.lineWidth / 2, 0, Math.PI * 2);
+      maskCtx.fill();
+
+      drawOverlayMask();
+    }
+
+    function stopDrawing() {
+      state.isDrawingMask = false;
+    }
+
+    // Push State to History
+    function pushHistory() {
+      if (!state.currentImageData) return;
+      // Copy current ImageData
+      const copy = offCtx.createImageData(state.currentImageData);
+      copy.data.set(state.currentImageData.data);
+
+      state.history.push(copy);
+      if (state.history.length > state.maxHistory) {
+        state.history.shift();
+      }
+      state.redoStack = []; // Reset redo stack on new action
+      updateUndoRedoButtons();
+    }
+
+    function updateUndoRedoButtons() {
+      elements.btnUndo.disabled = state.history.length === 0;
+      elements.btnRedo.disabled = state.redoStack.length === 0;
+    }
+
+    // Undo Action
+    function undo() {
+      if (state.history.length === 0) return;
+      // Save current state to redo stack
+      const currentCopy = offCtx.createImageData(state.currentImageData);
+      currentCopy.data.set(state.currentImageData.data);
+      state.redoStack.push(currentCopy);
+
+      state.currentImageData = state.history.pop();
+      updateUndoRedoButtons();
+      renderCanvases();
+    }
+
+    // Redo Action
+    function redo() {
+      if (state.redoStack.length === 0) return;
+      // Save current state to history
+      const currentCopy = offCtx.createImageData(state.currentImageData);
+      currentCopy.data.set(state.currentImageData.data);
+      state.history.push(currentCopy);
+
+      state.currentImageData = state.redoStack.pop();
+      updateUndoRedoButtons();
+      renderCanvases();
+    }
+
+    // Core 2D Convolution Processing Algorithm
+    function applyConvolution() {
+      if (!state.imageLoaded) return;
+
+      pushHistory();
+
+      const kernel = getKernelMatrix();
+      const kSize = state.gridSize;
+      const halfK = Math.floor(kSize / 2);
+
+      const src = state.currentImageData.data;
+      const width = state.imageWidth;
+      const height = state.imageHeight;
+
+      const outputImageData = offCtx.createImageData(width, height);
+      const dst = outputImageData.data;
+
+      const shouldNormalize = elements.chkNormalize.checked;
+      let kernelSum = 0;
+      if (shouldNormalize) {
+        kernelSum = kernel.reduce((acc, v) => acc + v, 0);
+        if (Math.abs(kernelSum) < 0.00001) kernelSum = 1; // Avoid division by zero
+      } else {
+        kernelSum = 1;
+      }
+
+      const bias = parseFloat(elements.inputBias.value) || 0;
+
+      // Get mask buffer if in mask mode
+      let maskData = null;
+      if (state.maskMode === 'mask') {
+        maskData = maskCtx.getImageData(0, 0, width, height).data;
+      }
+
+      // Fast pixel iteration
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const pixelIndex = (y * width + x) * 4;
+
+          // Check mask: if mask mode enabled and this pixel is NOT painted in mask, copy original
+          if (maskData && maskData[pixelIndex + 3] === 0) {
+            dst[pixelIndex]     = src[pixelIndex];
+            dst[pixelIndex + 1] = src[pixelIndex + 1];
+            dst[pixelIndex + 2] = src[pixelIndex + 2];
+            dst[pixelIndex + 3] = src[pixelIndex + 3];
+            continue;
+          }
+
+          let r = 0, g = 0, b = 0;
+
+          // Convolve kernel over neighborhood
+          for (let ky = 0; ky < kSize; ky++) {
+            for (let kx = 0; kx < kSize; kx++) {
+              // Clamp edge pixels (Extend border strategy)
+              const px = Math.min(width - 1, Math.max(0, x + kx - halfK));
+              const py = Math.min(height - 1, Math.max(0, y + ky - halfK));
+
+              const kVal = kernel[ky * kSize + kx];
+              const idx = (py * width + px) * 4;
+
+              r += src[idx] * kVal;
+              g += src[idx + 1] * kVal;
+              b += src[idx + 2] * kVal;
+            }
+          }
+
+          // Apply normalization and bias, clamp to [0, 255]
+          dst[pixelIndex]     = Math.min(255, Math.max(0, (r / kernelSum) + bias));
+          dst[pixelIndex + 1] = Math.min(255, Math.max(0, (g / kernelSum) + bias));
+          dst[pixelIndex + 2] = Math.min(255, Math.max(0, (b / kernelSum) + bias));
+          dst[pixelIndex + 3] = src[pixelIndex + 3]; // Maintain original alpha
+        }
+      }
+
+      state.currentImageData = outputImageData;
+      renderCanvases();
+    }
+
+    // Setup UI Event Listeners
+    function setupEventListeners() {
+      // File Pickers & Drag Drop
+      elements.uploadDropArea.addEventListener('click', () => elements.fileInput.click());
+      elements.fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) loadImageFromFile(e.target.files[0]);
+      });
+
+      ['dragenter', 'dragover'].forEach(eventName => {
+        elements.dropZone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          elements.dropZone.classList.add('border-indigo-500');
+        }, false);
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        elements.dropZone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          elements.dropZone.classList.remove('border-indigo-500');
+        }, false);
+      });
+
+      elements.dropZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length > 0) loadImageFromFile(files[0]);
+      });
+
+      // Clear Image
+      elements.btnClearImg.addEventListener('click', () => {
+        state.imageLoaded = false;
+        state.originalImageData = null;
+        state.currentImageData = null;
+        state.history = [];
+        state.redoStack = [];
+        updateUndoRedoButtons();
+
+        elements.placeholderState.classList.remove('hidden');
+        elements.imageCanvas.classList.add('hidden');
+        elements.overlayCanvas.classList.add('hidden');
+        elements.previewTools.classList.add('hidden');
+        elements.btnClearImg.classList.add('hidden');
+        elements.btnApply.disabled = true;
+        elements.btnSave.disabled = true;
+        elements.fileInput.value = '';
+      });
+
+      // Grid Size Toggles
+      elements.btnGrid3.addEventListener('click', () => setGridSize(3));
+      elements.btnGrid5.addEventListener('click', () => setGridSize(5));
+
+      // Preset Selector
+      elements.presetSelect.addEventListener('change', (e) => {
+        const key = e.target.value;
+        if (key && presets[key]) {
+          const p = presets[key];
+          renderKernelGrid(p.matrix);
+          elements.chkNormalize.checked = !!p.normalize;
+        }
+      });
+
+      // Clear Grid Button
+      elements.btnClearGrid.addEventListener('click', () => {
+        renderKernelGrid();
+        elements.presetSelect.value = 'custom';
+      });
+
+      // Apply Convolution Button
+      elements.btnApply.addEventListener('click', applyConvolution);
+
+      // Mask Mode Buttons
+      elements.btnModeAll.addEventListener('click', () => {
+        state.maskMode = 'all';
+        elements.btnModeAll.className = 'py-1.5 px-2 bg-indigo-600 text-white font-medium text-[11px] rounded-lg transition border border-indigo-500';
+        elements.btnModeMask.className = 'py-1.5 px-2 bg-slate-800 text-slate-300 hover:bg-slate-700 text-[11px] rounded-lg transition border border-slate-700';
+        elements.maskControls.classList.add('opacity-50', 'pointer-events-none');
+        drawOverlayMask();
+      });
+
+      elements.btnModeMask.addEventListener('click', () => {
+        state.maskMode = 'mask';
+        elements.btnModeMask.className = 'py-1.5 px-2 bg-indigo-600 text-white font-medium text-[11px] rounded-lg transition border border-indigo-500';
+        elements.btnModeAll.className = 'py-1.5 px-2 bg-slate-800 text-slate-300 hover:bg-slate-700 text-[11px] rounded-lg transition border border-slate-700';
+        elements.maskControls.classList.remove('opacity-50', 'pointer-events-none');
+        drawOverlayMask();
+      });
+
+      // Brush Controls
+      elements.inputBrushSize.addEventListener('input', (e) => {
+        state.brushSize = parseInt(e.target.value, 10);
+        elements.brushSizeVal.textContent = state.brushSize;
+      });
+
+      elements.btnClearMask.addEventListener('click', clearMask);
+      elements.btnInvertMask.addEventListener('click', invertMask);
+
+      // Overlay Canvas Pointer Drawing Events
+      elements.overlayCanvas.addEventListener('mousedown', startDrawing);
+      elements.overlayCanvas.addEventListener('mousemove', drawMaskStroke);
+      window.addEventListener('mouseup', stopDrawing);
+
+      elements.overlayCanvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        startDrawing(e);
+      }, { passive: false });
+      elements.overlayCanvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        drawMaskStroke(e);
+      }, { passive: false });
+      window.addEventListener('touchend', stopDrawing);
+
+      // Hold Original Image View
+      const showOriginal = () => {
+        if (!state.imageLoaded || !state.originalImageData) return;
+        const ctx = elements.imageCanvas.getContext('2d');
+        ctx.putImageData(state.originalImageData, 0, 0);
+      };
+
+      const hideOriginal = () => {
+        if (!state.imageLoaded || !state.currentImageData) return;
+        const ctx = elements.imageCanvas.getContext('2d');
+        ctx.putImageData(state.currentImageData, 0, 0);
+      };
+
+      elements.btnHoldOriginal.addEventListener('mousedown', showOriginal);
+      elements.btnHoldOriginal.addEventListener('mouseup', hideOriginal);
+      elements.btnHoldOriginal.addEventListener('mouseleave', hideOriginal);
+      elements.btnHoldOriginal.addEventListener('touchstart', showOriginal);
+      elements.btnHoldOriginal.addEventListener('touchend', hideOriginal);
+
+      // Undo / Redo Buttons & Shortcuts
+      elements.btnUndo.addEventListener('click', undo);
+      elements.btnRedo.addEventListener('click', redo);
+
+      window.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+          if (e.shiftKey) redo();
+          else undo();
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+          redo();
+        }
+      });
+
+      // Save / Export File (CSP-compliant Blob URL method)
+      elements.btnSave.addEventListener('click', () => {
+        if (!state.imageLoaded) return;
+
+        const format = elements.exportFormat.value;
+        const extMap = {
+          'image/png': 'png',
+          'image/jpeg': 'jpg',
+          'image/webp': 'webp'
+        };
+        const extension = extMap[format] || 'png';
+
+        // Render pure result image without overlay to export canvas
+        elements.imageCanvas.toBlob((blob) => {
+          if (!blob) return;
+
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.download = `convolution_result_${Date.now()}.${extension}`;
+          link.href = url;
+          
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+
+          setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }, format, 0.92);
+      });
+    }
+
+    // Initialize App
+    window.onload = function() {
+      updatePresetDropdown();
+      renderKernelGrid();
+      setupEventListeners();
+    };
+  </script>
+</body>
+</html>
