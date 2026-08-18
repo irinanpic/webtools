@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2D フーリエ変換・周波数フィルタリングツール (RGB & 任意サイズ対応)</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        /* Custom scrollbar for control panel */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(156, 163, 175, 0.5);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(107, 114, 128, 0.8);
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 h-screen overflow-hidden flex flex-col">
+
+    <!-- Header Navbar -->
+    <header class="bg-slate-800 border-b border-slate-700 px-6 py-3 flex items-center justify-between shrink-0 shadow-md">
+        <div class="flex items-center space-x-3">
+            <div class="p-2 bg-indigo-600 rounded-lg text-white shadow-inner">
+                <i class="fa-solid fa-wave-square text-xl"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-bold tracking-wide text-white">2D Color FFT Image Analyzer</h1>
+                <p class="text-xs text-slate-400">RGBカラー ＆ 任意アスペクト比対応 2次元フーリエ変換解析</p>
+            </div>
+        </div>
+
+        <!-- History Controls in Header -->
+        <div class="flex items-center space-x-2">
+            <button id="btn-undo" disabled class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium rounded-md transition border border-slate-600 flex items-center gap-1.5 text-slate-200">
+                <i class="fa-solid fa-rotate-left"></i> 元に戻す
+            </button>
+            <button id="btn-redo" disabled class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium rounded-md transition border border-slate-600 flex items-center gap-1.5 text-slate-200">
+                <i class="fa-solid fa-rotate-right"></i> やり直す
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <div class="flex-1 flex overflow-hidden">
+
+        <!-- LEFT SIDE: Controls and Management Panel -->
+        <aside class="w-80 md:w-96 bg-slate-800 border-r border-slate-700 flex flex-col overflow-y-auto shrink-0 shadow-xl">
+            <div class="p-5 space-y-6">
+
+                <!-- 1. Image Import Section -->
+                <section class="space-y-3">
+                    <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-file-import text-indigo-400"></i> 画像の読込み
+                    </h2>
+                    
+                    <div id="drop-zone" class="border-2 border-dashed border-slate-600 hover:border-indigo-500 rounded-xl p-4 text-center cursor-pointer transition-colors bg-slate-800/50 hover:bg-indigo-950/20 group">
+                        <input type="file" id="file-input" accept="image/*" class="hidden">
+                        <i class="fa-solid fa-cloud-arrow-up text-3xl text-slate-400 group-hover:text-indigo-400 transition-colors mb-2"></i>
+                        <p class="text-xs text-slate-300 font-medium">ドラッグ＆ドロップ または <span class="text-indigo-400 underline">ファイル選択</span></p>
+                        <p class="text-[10px] text-slate-500 mt-1">正方形・長方形・RGBカラー対応 (PNG, JPG, WEBP)</p>
+                    </div>
+                </section>
+
+                <hr class="border-slate-700">
+
+                <!-- 2. FFT Action Section -->
+                <section class="space-y-3">
+                    <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-bolt text-amber-400"></i> 変換処理
+                    </h2>
+                    <button id="btn-fft" class="w-full py-2.5 px-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-medium text-sm rounded-lg shadow-lg hover:shadow-indigo-500/25 transition duration-200 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-calculator"></i> RGB カラー フーリエ変換 (FFT) 実行
+                    </button>
+                    <p id="fft-status" class="text-[11px] text-slate-400 text-center">画像読み込み後に実行してください</p>
+                </section>
+
+                <hr class="border-slate-700">
+
+                <!-- 3. Frequency Filtering Controls -->
+                <section class="space-y-4">
+                    <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-filter text-emerald-400"></i> 周波数フィルタ
+                    </h2>
+
+                    <!-- Filter Type Selector -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1.5">フィルタ種別</label>
+                        <select id="filter-type" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                            <option value="none">指定なし (フィルタオフ)</option>
+                            <option value="lowpass">ローパスフィルタ (Low-pass)</option>
+                            <option value="highpass">ハイパスフィルタ (High-pass)</option>
+                            <option value="gauss-lowpass">ガウスローパス (Gaussian Low-pass)</option>
+                            <option value="gauss-highpass">ガウスハイパス (Gaussian High-pass)</option>
+                        </select>
+                    </div>
+
+                    <!-- Cutoff Frequency Slider -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-xs font-medium text-slate-400">カットオフ周波数 ($D_0$)</label>
+                            <span id="cutoff-value" class="text-xs font-mono text-indigo-400">30</span>
+                        </div>
+                        <input type="range" id="cutoff-slider" min="1" max="150" value="30" class="w-full accent-indigo-500 bg-slate-900 rounded-lg h-1.5 cursor-pointer">
+                    </div>
+
+                    <button id="btn-apply-filter" class="w-full py-2 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-xs text-slate-200 font-medium rounded-lg transition duration-150 flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-check"></i> フィルタを適用
+                    </button>
+                </section>
+
+                <hr class="border-slate-700">
+
+                <!-- 4. Interactive Brush Controls -->
+                <section class="space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-eraser text-rose-400"></i> 周波数消しゴムブラシ
+                        </h2>
+                    </div>
+
+                    <p class="text-[11px] text-slate-400 leading-relaxed">
+                        [周波数]タブ上でドラッグするとRGB全チャンネルの周波数成分を同時にカット（0消去）します。
+                    </p>
+
+                    <div>
+                        <div class="flex justify-between items-center mb-1">
+                            <label class="text-xs font-medium text-slate-400">ブラシサイズ</label>
+                            <span id="brush-size-value" class="text-xs font-mono text-rose-400">15 px</span>
+                        </div>
+                        <input type="range" id="brush-size-slider" min="3" max="60" value="15" class="w-full accent-rose-500 bg-slate-900 rounded-lg h-1.5 cursor-pointer">
+                    </div>
+
+                    <div class="flex items-center justify-between pt-1">
+                        <label class="text-xs text-slate-300 flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" id="check-symmetric" checked class="rounded border-slate-700 bg-slate-900 text-rose-500 focus:ring-0">
+                            点対称に消去（エルミート性維持）
+                        </label>
+                    </div>
+
+                    <button id="btn-reset-mask" class="w-full py-2 bg-slate-700/60 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-600 text-xs font-medium rounded-lg transition duration-150 flex items-center justify-center gap-1.5">
+                        <i class="fa-solid fa-trash-can"></i> ブラシ・フィルタ全リセット
+                    </button>
+                </section>
+
+                <hr class="border-slate-700">
+
+                <!-- 5. Download & Export Section -->
+                <section class="space-y-3">
+                    <h2 class="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-download text-sky-400"></i> 画像の保存
+                    </h2>
+
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1.5">保存フォーマット</label>
+                        <select id="export-format" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500">
+                            <option value="png">PNG 画像 (*.png)</option>
+                            <option value="jpeg">JPEG 画像 (*.jpg)</option>
+                            <option value="webp">WEBP 画像 (*.webp)</option>
+                        </select>
+                    </div>
+
+                    <button id="btn-export" class="w-full py-2.5 bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs rounded-lg shadow-md hover:shadow-sky-500/20 transition duration-150 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-floppy-disk"></i> 現在表示中のタブ内容を保存
+                    </button>
+                </section>
+
+            </div>
+        </aside>
+
+        <!-- RIGHT SIDE: Display Area (Tabs + Canvas Containers) -->
+        <main class="flex-1 flex flex-col bg-slate-950 overflow-hidden relative">
+
+            <!-- Tabs Bar -->
+            <div class="bg-slate-900 border-b border-slate-800 px-6 flex items-center space-x-2 shrink-0">
+                <button id="tab-btn-image" class="px-5 py-3 text-xs font-semibold border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-2 transition-all">
+                    <i class="fa-regular fa-image text-sm"></i> [画像] タブ (空間領域)
+                </button>
+                <button id="tab-btn-freq" class="px-5 py-3 text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition-all">
+                    <i class="fa-solid fa-atom text-sm"></i> [周波数] タブ (RGBスペクトル)
+                </button>
+                <div class="ml-auto text-[11px] text-slate-500 flex items-center gap-2">
+                    <span id="canvas-dim-info">未読み込み</span>
+                </div>
+            </div>
+
+            <!-- Display Area Container -->
+            <div class="flex-1 relative flex items-center justify-center p-4 overflow-hidden select-none" id="canvas-container">
+
+                <!-- Drop Overlay for Main Display Area -->
+                <div id="main-drop-overlay" class="absolute inset-4 border-2 border-dashed border-indigo-500 bg-indigo-950/85 backdrop-blur-sm rounded-xl flex flex-col items-center justify-center text-indigo-200 z-30 hidden pointer-events-none transition-all shadow-2xl">
+                    <i class="fa-solid fa-cloud-arrow-up text-5xl mb-3 text-indigo-400 animate-bounce"></i>
+                    <p class="text-base font-semibold text-white">ここに画像をドロップして読み込み</p>
+                    <p class="text-xs text-indigo-300 mt-1">RGBカラー & 元画像の解像度を保持してロードします</p>
+                </div>
+
+                <!-- Empty State Placeholder -->
+                <div id="empty-state" class="text-center text-slate-500 p-8 max-w-sm">
+                    <i class="fa-regular fa-images text-6xl mb-4 opacity-40"></i>
+                    <p class="text-sm font-medium text-slate-400 mb-1">画像がロードされていません</p>
+                    <p class="text-xs">左パネルまたはこの表示エリアに画像をドラッグ＆ドロップしてください。</p>
+                </div>
+
+                <!-- Canvas Wrapper (Flexible Resizing preserving original aspect ratio) -->
+                <div id="wrapper-canvas" class="relative max-w-full max-h-full flex items-center justify-center hidden shadow-2xl rounded-lg overflow-hidden border border-slate-800">
+                    
+                    <!-- Canvas 1: Spatial Domain (Original / Restored RGB Image) -->
+                    <canvas id="canvas-spatial" class="max-w-full max-h-full object-contain block"></canvas>
+
+                    <!-- Canvas 2: Frequency Domain Spectrum (RGB Combined Spectrum) -->
+                    <canvas id="canvas-freq" class="max-w-full max-h-full object-contain hidden cursor-crosshair"></canvas>
+
+                    <!-- Brush Overlay Ring for Visual Guide in Frequency Domain -->
+                    <div id="brush-cursor" class="absolute pointer-events-none rounded-full border border-rose-400 bg-rose-500/20 hidden transform -translate-x-1/2 -translate-y-1/2"></div>
+                </div>
+
+                <!-- Toast Notification Box -->
+                <div id="toast" class="absolute bottom-6 bg-slate-800/90 text-slate-200 border border-slate-700 px-4 py-2 rounded-lg shadow-xl text-xs flex items-center gap-2 opacity-0 pointer-events-none transition-opacity duration-300">
+                    <i id="toast-icon" class="fa-solid fa-circle-info text-indigo-400"></i>
+                    <span id="toast-msg">通知メッセージ</span>
+                </div>
+
+            </div>
+
+        </main>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+        /**
+         * 2D Fourier Analysis Engine with Bluestein's FFT algorithm for arbitrary dimensions
+         * Supports RGB color channels and full undo/redo state history.
+         */
+
+        // Core Application State
+        const state = {
+            activeTab: 'image', // 'image' | 'freq'
+            loadedImage: null,  // HTMLImageElement
+            isFFTDone: false,
+
+            // Original resolution preserved
+            width: 0,
+            height: 0,
+
+            // Complex FFT arrays for RGB channels
+            realR: null, imagR: null,
+            realG: null, imagG: null,
+            realB: null, imagB: null,
+
+            // Shared filtering mask
+            mask: null,
+
+            // Original spatial RGB values
+            spatialOrigR: null,
+            spatialOrigG: null,
+            spatialOrigB: null,
+
+            // Restored spatial RGB values
+            spatialRestoredR: null,
+            spatialRestoredG: null,
+            spatialRestoredB: null,
+
+            // Filter configuration
+            filterType: 'none',
+            cutoff: 30,
+
+            // Eraser Brush configuration
+            brushSize: 15,
+            isSymmetricEraser: true,
+            isMouseDown: false,
+            brushStrokeModified: false,
+
+            // Undo / Redo history stack
+            historyStack: [],
+            historyIndex: -1,
+            maxHistory: 30
+        };
+
+        /**
+         * Radix-2 Cooley-Tukey 1D FFT for power of 2 lengths
+         */
+        function fft1dPowerOf2(re, im, invert) {
+            const n = re.length;
+            for (let i = 1, j = 0; i < n; i++) {
+                let bit = n >> 1;
+                for (; j & bit; bit >>= 1) j ^= bit;
+                j ^= bit;
+                if (i < j) {
+                    let tempR = re[i]; re[i] = re[j]; re[j] = tempR;
+                    let tempI = im[i]; im[i] = im[j]; im[j] = tempI;
+                }
+            }
+
+            for (let len = 2; len <= n; len <<= 1) {
+                const ang = 2 * Math.PI / len * (invert ? -1 : 1);
+                const wlenR = Math.cos(ang);
+                const wlenI = Math.sin(ang);
+
+                for (let i = 0; i < n; i += len) {
+                    let wR = 1.0, wI = 0.0;
+                    const half = len >> 1;
+
+                    for (let j = 0; j < half; j++) {
+                        const uR = re[i + j], uI = im[i + j];
+                        const vR = re[i + j + half] * wR - im[i + j + half] * wI;
+                        const vI = re[i + j + half] * wI + im[i + j + half] * wR;
+
+                        re[i + j] = uR + vR;
+                        im[i + j] = uI + vI;
+                        re[i + j + half] = uR - vR;
+                        im[i + j + half] = uI - vI;
+
+                        const nextWR = wR * wlenR - wI * wlenI;
+                        const nextWI = wR * wlenI + wI * wlenR;
+                        wR = nextWR; wI = nextWI;
+                    }
+                }
+            }
+
+            if (invert) {
+                for (let i = 0; i < n; i++) {
+                    re[i] /= n;
+                    im[i] /= n;
+                }
+            }
+        }
+
+        /**
+         * Bluestein's FFT algorithm for arbitrary 1D array length N
+         */
+        function fft1dArbitrary(re, im, invert) {
+            const N = re.length;
+            if (N <= 1) return;
+
+            // If N is a power of 2, use fast Radix-2
+            if ((N & (N - 1)) === 0) {
+                fft1dPowerOf2(re, im, invert);
+                return;
+            }
+
+            let M = 1;
+            while (M < 2 * N - 1) M <<= 1;
+
+            const cosTable = new Float32Array(N);
+            const sinTable = new Float32Array(N);
+            const sign = invert ? 1 : -1;
+
+            for (let i = 0; i < N; i++) {
+                const angle = sign * Math.PI * ((i * i) % (2 * N)) / N;
+                cosTable[i] = Math.cos(angle);
+                sinTable[i] = Math.sin(angle);
+            }
+
+            const aR = new Float32Array(M);
+            const aI = new Float32Array(M);
+            for (let i = 0; i < N; i++) {
+                aR[i] = re[i] * cosTable[i] - im[i] * sinTable[i];
+                aI[i] = re[i] * sinTable[i] + im[i] * cosTable[i];
+            }
+
+            const bR = new Float32Array(M);
+            const bI = new Float32Array(M);
+            bR[0] = cosTable[0];
+            bI[0] = -sinTable[0];
+            for (let i = 1; i < N; i++) {
+                const c = cosTable[i];
+                const s = -sinTable[i];
+                bR[i] = c; bI[i] = s;
+                bR[M - i] = c; bI[M - i] = s;
+            }
+
+            fft1dPowerOf2(aR, aI, false);
+            fft1dPowerOf2(bR, bI, false);
+
+            for (let i = 0; i < M; i++) {
+                const tr = aR[i] * bR[i] - aI[i] * bI[i];
+                const ti = aR[i] * bI[i] + aI[i] * bR[i];
+                aR[i] = tr;
+                aI[i] = ti;
+            }
+
+            fft1dPowerOf2(aR, aI, true);
+
+            for (let i = 0; i < N; i++) {
+                re[i] = aR[i] * cosTable[i] - aI[i] * sinTable[i];
+                im[i] = aR[i] * sinTable[i] + aI[i] * cosTable[i];
+                if (invert) {
+                    re[i] /= N;
+                    im[i] /= N;
+                }
+            }
+        }
+
+        /**
+         * 2D FFT on arbitrary rectangular matrix (Nx x Ny)
+         */
+        function fft2d(reInput, imInput, reOutput, imOutput, Nx, Ny, invert = false) {
+            reOutput.set(reInput);
+            imOutput.set(imInput);
+
+            // Row-wise FFT (length Nx) across Ny rows
+            const rowR = new Float32Array(Nx);
+            const rowI = new Float32Array(Nx);
+            for (let y = 0; y < Ny; y++) {
+                const offset = y * Nx;
+                for (let x = 0; x < Nx; x++) {
+                    rowR[x] = reOutput[offset + x];
+                    rowI[x] = imOutput[offset + x];
+                }
+                fft1dArbitrary(rowR, rowI, invert);
+                for (let x = 0; x < Nx; x++) {
+                    reOutput[offset + x] = rowR[x];
+                    imOutput[offset + x] = rowI[x];
+                }
+            }
+
+            // Column-wise FFT (length Ny) across Nx columns
+            const colR = new Float32Array(Ny);
+            const colI = new Float32Array(Ny);
+            for (let x = 0; x < Nx; x++) {
+                for (let y = 0; y < Ny; y++) {
+                    colR[y] = reOutput[y * Nx + x];
+                    colI[y] = imOutput[y * Nx + x];
+                }
+                fft1dArbitrary(colR, colI, invert);
+                for (let y = 0; y < Ny; y++) {
+                    reOutput[y * Nx + x] = colR[y];
+                    imOutput[y * Nx + x] = colI[y];
+                }
+            }
+        }
+
+        // DOM Elements
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const btnFFT = document.getElementById('btn-fft');
+        const fftStatus = document.getElementById('fft-status');
+
+        const btnUndo = document.getElementById('btn-undo');
+        const btnRedo = document.getElementById('btn-redo');
+
+        const filterTypeSelect = document.getElementById('filter-type');
+        const cutoffSlider = document.getElementById('cutoff-slider');
+        const cutoffValueDisp = document.getElementById('cutoff-value');
+        const btnApplyFilter = document.getElementById('btn-apply-filter');
+
+        const brushSizeSlider = document.getElementById('brush-size-slider');
+        const brushSizeDisp = document.getElementById('brush-size-value');
+        const checkSymmetric = document.getElementById('check-symmetric');
+        const btnResetMask = document.getElementById('btn-reset-mask');
+
+        const exportFormatSelect = document.getElementById('export-format');
+        const btnExport = document.getElementById('btn-export');
+
+        const tabBtnImage = document.getElementById('tab-btn-image');
+        const tabBtnFreq = document.getElementById('tab-btn-freq');
+        const canvasDimInfo = document.getElementById('canvas-dim-info');
+
+        const canvasContainer = document.getElementById('canvas-container');
+        const mainDropOverlay = document.getElementById('main-drop-overlay');
+        const emptyState = document.getElementById('empty-state');
+        const wrapperCanvas = document.getElementById('wrapper-canvas');
+        const canvasSpatial = document.getElementById('canvas-spatial');
+        const canvasFreq = document.getElementById('canvas-freq');
+        const brushCursor = document.getElementById('brush-cursor');
+
+        const toast = document.getElementById('toast');
+        const toastMsg = document.getElementById('toast-msg');
+        const toastIcon = document.getElementById('toast-icon');
+
+        const ctxSpatial = canvasSpatial.getContext('2d');
+        const ctxFreq = canvasFreq.getContext('2d');
+
+        function showToast(message, type = 'info') {
+            toastMsg.textContent = message;
+            if (type === 'success') {
+                toastIcon.className = 'fa-solid fa-circle-check text-emerald-400';
+            } else if (type === 'warning') {
+                toastIcon.className = 'fa-solid fa-triangle-exclamation text-amber-400';
+            } else {
+                toastIcon.className = 'fa-solid fa-circle-info text-indigo-400';
+            }
+            toast.classList.remove('opacity-0');
+            toast.classList.add('opacity-100');
+            setTimeout(() => {
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0');
+            }, 2500);
+        }
+
+        // History Management Functions
+        function pushHistoryState() {
+            if (!state.mask) return;
+            
+            // Truncate redo history
+            if (state.historyIndex < state.historyStack.length - 1) {
+                state.historyStack = state.historyStack.slice(0, state.historyIndex + 1);
+            }
+
+            // Copy mask
+            const snapshot = new Float32Array(state.mask);
+            state.historyStack.push(snapshot);
+
+            if (state.historyStack.length > state.maxHistory) {
+                state.historyStack.shift();
+            } else {
+                state.historyIndex++;
+            }
+
+            updateHistoryButtons();
+        }
+
+        function undo() {
+            if (state.historyIndex > 0) {
+                state.historyIndex--;
+                state.mask.set(state.historyStack[state.historyIndex]);
+                updateHistoryButtons();
+                if (state.isFFTDone) {
+                    renderFrequencySpectrum();
+                    if (state.activeTab === 'image') performIFFTAndRenderSpatial();
+                }
+                showToast("操作を取り消しました (Undo)", "info");
+            }
+        }
+
+        function redo() {
+            if (state.historyIndex < state.historyStack.length - 1) {
+                state.historyIndex++;
+                state.mask.set(state.historyStack[state.historyIndex]);
+                updateHistoryButtons();
+                if (state.isFFTDone) {
+                    renderFrequencySpectrum();
+                    if (state.activeTab === 'image') performIFFTAndRenderSpatial();
+                }
+                showToast("操作をやり直しました (Redo)", "info");
+            }
+        }
+
+        function updateHistoryButtons() {
+            btnUndo.disabled = state.historyIndex <= 0;
+            btnRedo.disabled = state.historyIndex >= state.historyStack.length - 1;
+        }
+
+        btnUndo.addEventListener('click', undo);
+        btnRedo.addEventListener('click', redo);
+
+        // Left Drop Zone Events
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('border-indigo-500', 'bg-indigo-950/40');
+        });
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('border-indigo-500', 'bg-indigo-950/40');
+        });
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('border-indigo-500', 'bg-indigo-950/40');
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                loadImageFromFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        // Main Display Area Drag & Drop Events
+        let mainDragCounter = 0;
+        canvasContainer.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            mainDragCounter++;
+            if (e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+                mainDropOverlay.classList.remove('hidden');
+            }
+        });
+
+        canvasContainer.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
+        canvasContainer.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            mainDragCounter--;
+            if (mainDragCounter <= 0) {
+                mainDragCounter = 0;
+                mainDropOverlay.classList.add('hidden');
+            }
+        });
+
+        canvasContainer.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            mainDragCounter = 0;
+            mainDropOverlay.classList.add('hidden');
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                loadImageFromFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files && e.target.files[0]) {
+                loadImageFromFile(e.target.files[0]);
+            }
+        });
+
+        function loadImageFromFile(file) {
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const img = new Image();
+                img.onload = () => processLoadedImage(img);
+                img.src = evt.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function processLoadedImage(img) {
+            state.loadedImage = img;
+            state.isFFTDone = false;
+
+            // Preserve exact original image resolution (capped to max 1024 for browser fluid performance if large)
+            let origW = img.naturalWidth || img.width;
+            let origH = img.naturalHeight || img.height;
+
+            const maxDim = 1024;
+            if (origW > maxDim || origH > maxDim) {
+                if (origW >= origH) {
+                    origH = Math.round((origH * maxDim) / origW);
+                    origW = maxDim;
+                } else {
+                    origW = Math.round((origW * maxDim) / origH);
+                    origH = maxDim;
+                }
+            }
+
+            state.width = origW;
+            state.height = origH;
+
+            const Nx = state.width;
+            const Ny = state.height;
+            const totalPixels = Nx * Ny;
+
+            // Resize canvases
+            canvasSpatial.width = Nx;
+            canvasSpatial.height = Ny;
+            canvasFreq.width = Nx;
+            canvasFreq.height = Ny;
+
+            // Reset filters, mask and history state
+            state.filterType = 'none';
+            filterTypeSelect.value = 'none';
+            state.cutoff = 30;
+            cutoffSlider.value = 30;
+            cutoffValueDisp.textContent = '30';
+
+            state.historyStack = [];
+            state.historyIndex = -1;
+
+            // Allocate RGB Float32 arrays
+            state.realR = new Float32Array(totalPixels); state.imagR = new Float32Array(totalPixels);
+            state.realG = new Float32Array(totalPixels); state.imagG = new Float32Array(totalPixels);
+            state.realB = new Float32Array(totalPixels); state.imagB = new Float32Array(totalPixels);
+
+            state.mask = new Float32Array(totalPixels).fill(1.0);
+
+            state.spatialOrigR = new Float32Array(totalPixels);
+            state.spatialOrigG = new Float32Array(totalPixels);
+            state.spatialOrigB = new Float32Array(totalPixels);
+
+            state.spatialRestoredR = new Float32Array(totalPixels);
+            state.spatialRestoredG = new Float32Array(totalPixels);
+            state.spatialRestoredB = new Float32Array(totalPixels);
+
+            // Draw image on spatial canvas preserving exact aspect ratio
+            ctxSpatial.clearRect(0, 0, Nx, Ny);
+            ctxSpatial.drawImage(img, 0, 0, Nx, Ny);
+
+            // Extract RGB pixel values
+            const imgData = ctxSpatial.getImageData(0, 0, Nx, Ny);
+            const data = imgData.data;
+
+            for (let i = 0; i < totalPixels; i++) {
+                const r = data[i * 4];
+                const g = data[i * 4 + 1];
+                const b = data[i * 4 + 2];
+
+                state.spatialOrigR[i] = r;
+                state.spatialOrigG[i] = g;
+                state.spatialOrigB[i] = b;
+
+                state.spatialRestoredR[i] = r;
+                state.spatialRestoredG[i] = g;
+                state.spatialRestoredB[i] = b;
+            }
+
+            pushHistoryState();
+
+            // Update UI Info
+            emptyState.classList.add('hidden');
+            wrapperCanvas.classList.remove('hidden');
+            canvasDimInfo.textContent = `解像度: ${Nx} × ${Ny} px (元画像サイズ保持)`;
+            fftStatus.textContent = "準備完了: [フーリエ変換] ボタンを押してください";
+            fftStatus.className = "text-[11px] text-amber-400 font-medium text-center";
+
+            switchTab('image');
+            showToast("画像を読み込みました (サイズ保持・フィルタ初期化完了)", "success");
+        }
+
+        btnFFT.addEventListener('click', () => {
+            if (!state.loadedImage) {
+                showToast("先に画像を読み込んでください", "warning");
+                return;
+            }
+            performFFT();
+        });
+
+        function performFFT() {
+            const Nx = state.width;
+            const Ny = state.height;
+            const totalPixels = Nx * Ny;
+
+            const tempRe = new Float32Array(totalPixels);
+            const tempIm = new Float32Array(totalPixels);
+
+            const processChannelFFT = (origArray, realOut, imagOut) => {
+                for (let y = 0; y < Ny; y++) {
+                    for (let x = 0; x < Nx; x++) {
+                        const idx = y * Nx + x;
+                        const shift = ((x + y) % 2 === 0) ? 1 : -1;
+                        tempRe[idx] = origArray[idx] * shift;
+                        tempIm[idx] = 0;
+                    }
+                }
+                fft2d(tempRe, tempIm, realOut, imagOut, Nx, Ny, false);
+            };
+
+            processChannelFFT(state.spatialOrigR, state.realR, state.imagR);
+            processChannelFFT(state.spatialOrigG, state.realG, state.imagG);
+            processChannelFFT(state.spatialOrigB, state.realB, state.imagB);
+
+            state.isFFTDone = true;
+            fftStatus.textContent = "RGB カラー フーリエ変換完了";
+            fftStatus.className = "text-[11px] text-emerald-400 font-medium text-center";
+
+            applyFiltersAndRenderSpectrum();
+            switchTab('freq');
+            showToast("RGBカラー フーリエ変換が完了しました", "success");
+        }
+
+        function applyFiltersAndRenderSpectrum() {
+            if (!state.isFFTDone) return;
+
+            const Nx = state.width;
+            const Ny = state.height;
+            const centerX = Nx / 2;
+            const centerY = Ny / 2;
+            const cutoff = state.cutoff;
+            const fType = state.filterType;
+
+            if (fType !== 'none') {
+                for (let y = 0; y < Ny; y++) {
+                    for (let x = 0; x < Nx; x++) {
+                        const dist = Math.hypot(x - centerX, y - centerY);
+                        const idx = y * Nx + x;
+                        let val = 1.0;
+
+                        if (fType === 'lowpass') {
+                            val = dist <= cutoff ? 1.0 : 0.0;
+                        } else if (fType === 'highpass') {
+                            val = dist > cutoff ? 1.0 : 0.0;
+                        } else if (fType === 'gauss-lowpass') {
+                            val = Math.exp(- (dist * dist) / (2 * cutoff * cutoff));
+                        } else if (fType === 'gauss-highpass') {
+                            val = 1.0 - Math.exp(- (dist * dist) / (2 * cutoff * cutoff));
+                        }
+
+                        state.mask[idx] *= val;
+                    }
+                }
+                pushHistoryState();
+            }
+
+            renderFrequencySpectrum();
+        }
+
+        function renderFrequencySpectrum() {
+            const Nx = state.width;
+            const Ny = state.height;
+            const totalPixels = Nx * Ny;
+            const imgData = ctxFreq.createImageData(Nx, Ny);
+            const data = imgData.data;
+
+            const magR = new Float32Array(totalPixels);
+            const magG = new Float32Array(totalPixels);
+            const magB = new Float32Array(totalPixels);
+
+            let maxLogR = 0, maxLogG = 0, maxLogB = 0;
+
+            for (let i = 0; i < totalPixels; i++) {
+                const mVal = state.mask[i];
+
+                const rR = state.realR[i] * mVal, iR = state.imagR[i] * mVal;
+                const rG = state.realG[i] * mVal, iG = state.imagG[i] * mVal;
+                const rB = state.realB[i] * mVal, iB = state.imagB[i] * mVal;
+
+                const lR = Math.log(1 + Math.sqrt(rR * rR + iR * iR));
+                const lG = Math.log(1 + Math.sqrt(rG * rG + iG * iG));
+                const lB = Math.log(1 + Math.sqrt(rB * rB + iB * iB));
+
+                magR[i] = lR; if (lR > maxLogR) maxLogR = lR;
+                magG[i] = lG; if (lG > maxLogG) maxLogG = lG;
+                magB[i] = lB; if (lB > maxLogB) maxLogB = lB;
+            }
+
+            const scaleR = maxLogR > 0 ? 255 / maxLogR : 0;
+            const scaleG = maxLogG > 0 ? 255 / maxLogG : 0;
+            const scaleB = maxLogB > 0 ? 255 / maxLogB : 0;
+
+            for (let i = 0; i < totalPixels; i++) {
+                const mVal = state.mask[i];
+                const px = i * 4;
+
+                data[px]     = Math.min(255, magR[i] * scaleR) * mVal;
+                data[px + 1] = Math.min(255, magG[i] * scaleG) * mVal;
+                data[px + 2] = Math.min(255, magB[i] * scaleB) * mVal;
+                data[px + 3] = 255;
+            }
+
+            ctxFreq.putImageData(imgData, 0, 0);
+        }
+
+        function performIFFTAndRenderSpatial() {
+            if (!state.isFFTDone) return;
+
+            const Nx = state.width;
+            const Ny = state.height;
+            const totalPixels = Nx * Ny;
+
+            const maskedRe = new Float32Array(totalPixels);
+            const maskedIm = new Float32Array(totalPixels);
+            const restoredRe = new Float32Array(totalPixels);
+            const restoredIm = new Float32Array(totalPixels);
+
+            const processChannelIFFT = (realIn, imagIn, outArray) => {
+                for (let i = 0; i < totalPixels; i++) {
+                    maskedRe[i] = realIn[i] * state.mask[i];
+                    maskedIm[i] = imagIn[i] * state.mask[i];
+                }
+
+                fft2d(maskedRe, maskedIm, restoredRe, restoredIm, Nx, Ny, true);
+
+                for (let y = 0; y < Ny; y++) {
+                    for (let x = 0; x < Nx; x++) {
+                        const idx = y * Nx + x;
+                        const shift = ((x + y) % 2 === 0) ? 1 : -1;
+                        const val = Math.max(0, Math.min(255, restoredRe[idx] * shift));
+                        outArray[idx] = val;
+                    }
+                }
+            };
+
+            processChannelIFFT(state.realR, state.imagR, state.spatialRestoredR);
+            processChannelIFFT(state.realG, state.imagG, state.spatialRestoredG);
+            processChannelIFFT(state.realB, state.imagB, state.spatialRestoredB);
+
+            const imgData = ctxSpatial.createImageData(Nx, Ny);
+            const data = imgData.data;
+
+            for (let i = 0; i < totalPixels; i++) {
+                const px = i * 4;
+                data[px]     = state.spatialRestoredR[i];
+                data[px + 1] = state.spatialRestoredG[i];
+                data[px + 2] = state.spatialRestoredB[i];
+                data[px + 3] = 255;
+            }
+
+            ctxSpatial.putImageData(imgData, 0, 0);
+        }
+
+        function getCanvasCoords(e) {
+            const rect = canvasFreq.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const scaleX = state.width / rect.width;
+            const scaleY = state.height / rect.height;
+            const x = Math.floor((clientX - rect.left) * scaleX);
+            const y = Math.floor((clientY - rect.top) * scaleY);
+            return { x, y };
+        }
+
+        function eraseAtLocation(cx, cy) {
+            if (!state.isFFTDone) return;
+
+            const Nx = state.width;
+            const Ny = state.height;
+            const radius = state.brushSize;
+            const rSq = radius * radius;
+
+            let modified = false;
+
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    if (dx * dx + dy * dy <= rSq) {
+                        const x = cx + dx;
+                        const y = cy + dy;
+
+                        if (x >= 0 && x < Nx && y >= 0 && y < Ny) {
+                            state.mask[y * Nx + x] = 0.0;
+                            modified = true;
+                        }
+
+                        if (state.isSymmetricEraser) {
+                            const symX = (Nx - x) % Nx;
+                            const symY = (Ny - y) % Ny;
+                            state.mask[symY * Nx + symX] = 0.0;
+                        }
+                    }
+                }
+            }
+
+            if (modified) {
+                state.brushStrokeModified = true;
+                renderFrequencySpectrum();
+            }
+        }
+
+        canvasFreq.addEventListener('mousedown', (e) => {
+            state.isMouseDown = true;
+            state.brushStrokeModified = false;
+            const coords = getCanvasCoords(e);
+            eraseAtLocation(coords.x, coords.y);
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (state.activeTab === 'freq' && wrapperCanvas.contains(e.target)) {
+                const rect = canvasFreq.getBoundingClientRect();
+                const scaleX = rect.width / state.width;
+
+                brushCursor.classList.remove('hidden');
+                brushCursor.style.width = `${state.brushSize * 2 * scaleX}px`;
+                brushCursor.style.height = `${state.brushSize * 2 * scaleX}px`;
+                brushCursor.style.left = `${e.clientX - rect.left}px`;
+                brushCursor.style.top = `${e.clientY - rect.top}px`;
+
+                if (state.isMouseDown) {
+                    const coords = getCanvasCoords(e);
+                    eraseAtLocation(coords.x, coords.y);
+                }
+            } else {
+                brushCursor.classList.add('hidden');
+            }
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (state.isMouseDown && state.brushStrokeModified) {
+                pushHistoryState();
+            }
+            state.isMouseDown = false;
+            state.brushStrokeModified = false;
+        });
+
+        canvasFreq.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            state.isMouseDown = true;
+            state.brushStrokeModified = false;
+            const coords = getCanvasCoords(e);
+            eraseAtLocation(coords.x, coords.y);
+        });
+        canvasFreq.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (state.isMouseDown) {
+                const coords = getCanvasCoords(e);
+                eraseAtLocation(coords.x, coords.y);
+            }
+        });
+        canvasFreq.addEventListener('touchend', () => {
+            if (state.isMouseDown && state.brushStrokeModified) {
+                pushHistoryState();
+            }
+            state.isMouseDown = false;
+            state.brushStrokeModified = false;
+        });
+
+        filterTypeSelect.addEventListener('change', (e) => {
+            state.filterType = e.target.value;
+        });
+
+        cutoffSlider.addEventListener('input', (e) => {
+            state.cutoff = parseInt(e.target.value);
+            cutoffValueDisp.textContent = state.cutoff;
+        });
+
+        btnApplyFilter.addEventListener('click', () => {
+            if (!state.isFFTDone) {
+                showToast("先にフーリエ変換を実行してください", "warning");
+                return;
+            }
+            applyFiltersAndRenderSpectrum();
+            showToast("周波数フィルタを適用しました", "success");
+        });
+
+        brushSizeSlider.addEventListener('input', (e) => {
+            state.brushSize = parseInt(e.target.value);
+            brushSizeDisp.textContent = `${state.brushSize} px`;
+        });
+
+        checkSymmetric.addEventListener('change', (e) => {
+            state.isSymmetricEraser = e.target.checked;
+        });
+
+        btnResetMask.addEventListener('click', () => {
+            if (!state.mask) return;
+            state.mask.fill(1.0);
+            state.filterType = 'none';
+            filterTypeSelect.value = 'none';
+            pushHistoryState();
+            if (state.isFFTDone) {
+                renderFrequencySpectrum();
+                showToast("フィルタ・消しゴムをリセットしました", "info");
+            }
+        });
+
+        tabBtnImage.addEventListener('click', () => switchTab('image'));
+        tabBtnFreq.addEventListener('click', () => switchTab('freq'));
+
+        function switchTab(tab) {
+            state.activeTab = tab;
+
+            if (tab === 'image') {
+                tabBtnImage.className = "px-5 py-3 text-xs font-semibold border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-2 transition-all";
+                tabBtnFreq.className = "px-5 py-3 text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition-all";
+
+                canvasSpatial.classList.remove('hidden');
+                canvasFreq.classList.add('hidden');
+                brushCursor.classList.add('hidden');
+
+                if (state.isFFTDone) {
+                    performIFFTAndRenderSpatial();
+                }
+            } else {
+                tabBtnFreq.className = "px-5 py-3 text-xs font-semibold border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-2 transition-all";
+                tabBtnImage.className = "px-5 py-3 text-xs font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition-all";
+
+                canvasFreq.classList.remove('hidden');
+                canvasSpatial.classList.add('hidden');
+
+                if (!state.isFFTDone && state.loadedImage) {
+                    performFFT();
+                }
+            }
+        }
+
+        btnExport.addEventListener('click', () => {
+            if (!state.loadedImage) {
+                showToast("保存する画像がありません", "warning");
+                return;
+            }
+
+            const format = exportFormatSelect.value;
+            const mimeType = `image/${format}`;
+            const currentCanvas = state.activeTab === 'image' ? canvasSpatial : canvasFreq;
+            const timestamp = new Date().toISOString().slice(0, 10);
+            const filename = `fft_${state.activeTab}_${state.width}x${state.height}_${timestamp}.${format === 'jpeg' ? 'jpg' : format}`;
+
+            // Canvasの内容をBlob形式に変換してローカルへダウンロード
+            currentCanvas.toBlob((blob) => {
+                if (!blob) {
+                    showToast("画像の生成に失敗しました", "warning");
+                    return;
+                }
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+                showToast(`${filename} をローカルにダウンロード保存しました`, "success");
+            }, mimeType, 0.95);
+        });
+    </script>
+</body>
+</html>
