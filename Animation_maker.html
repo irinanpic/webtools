@@ -13,6 +13,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js" data-cfasync="false"></script>
   <!-- MP4 Muxer for H.264 MP4 Export (Cloudflareの最適化を回避) -->
   <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.0/build/mp4-muxer.min.js" data-cfasync="false"></script>
+  <!-- Shared Memory Transfer Module -->
+  <script src="memory_transfer.js"></script>
 
   <style>
     ::-webkit-scrollbar {
@@ -93,6 +95,15 @@
           <span>進む</span>
         </button>
       </div>
+
+      <button id="saveMemoryBtn" class="px-3 py-1.5 bg-indigo-700/70 hover:bg-indigo-600 active:bg-indigo-800 text-indigo-100 text-xs font-medium rounded-lg transition border border-indigo-500/60 shadow-sm flex items-center space-x-1.5" title="現在のプレビューフレーム画像をメモリに保存します">
+        <i class="fa-solid fa-floppy-disk text-indigo-300"></i>
+        <span>メモリに保存</span>
+      </button>
+      <button id="loadMemoryBtn" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg transition border border-slate-600 flex items-center space-x-1.5" title="メモリから画像を読み出します">
+        <i class="fa-solid fa-arrow-up-from-bracket text-slate-300"></i>
+        <span>メモリから読み出し</span>
+      </button>
 
       <input type="file" id="fileInputImages" accept="image/*" multiple class="hidden">
       <input type="file" id="fileInputAudio" accept="audio/*" multiple class="hidden">
@@ -2397,6 +2408,37 @@
       commitStateChange();
       renderTimeline();
       renderPreviewCanvas();
+    });
+
+    // 共通メモリへの保存・読み出し処理
+    document.getElementById('saveMemoryBtn').addEventListener('click', async () => {
+      if (state.frames.length === 0) {
+        AppMemory.showToast('保存する画像データがありません', 'warning');
+        return;
+      }
+      renderPreviewCanvas();
+      await AppMemory.save(elements.previewCanvas, { filename: 'animation_frame.png' });
+    });
+
+    document.getElementById('loadMemoryBtn').addEventListener('click', async () => {
+      if (!(await AppMemory.hasData())) {
+        AppMemory.showToast('メモリに保存された画像データがありません', 'warning');
+        return;
+      }
+
+      if (state.frames.length > 0 || state.audioClips.length > 0) {
+        if (!confirm('既存のデータが消えてしまいますが、よろしいですか？')) {
+          return;
+        }
+      }
+
+      const file = await AppMemory.loadAsFile('memory_animation_frame.png');
+      if (file) {
+        state.frames = [];
+        state.audioClips = [];
+        await handleFiles([file], 'image');
+        AppMemory.showToast('メモリから画像を読み出しました', 'info');
+      }
     });
   </script>
 </body>

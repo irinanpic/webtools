@@ -9,6 +9,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Shared Memory Transfer Module -->
+  <script src="memory_transfer.js"></script>
 
   <style>
     ::-webkit-scrollbar {
@@ -78,6 +80,14 @@
         </button>
       </div>
 
+      <button id="saveMemoryBtn" class="px-3.5 py-1.5 bg-indigo-700/70 hover:bg-indigo-600 active:bg-indigo-800 text-indigo-100 text-xs font-semibold rounded-lg shadow-sm border border-indigo-500/60 transition flex items-center space-x-1.5" title="透過処理結果をメモリに保存します">
+        <i class="fa-solid fa-floppy-disk text-indigo-300"></i>
+        <span>メモリに保存</span>
+      </button>
+      <button id="loadMemoryBtn" class="px-3.5 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 text-xs font-semibold rounded-lg shadow-sm border border-slate-600 transition flex items-center space-x-1.5" title="メモリから画像を読み出します">
+        <i class="fa-solid fa-arrow-up-from-bracket text-slate-300"></i>
+        <span>メモリから読み出し</span>
+      </button>
       <button id="resetBtn" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg transition border border-slate-600 flex items-center space-x-1.5">
         <i class="fa-solid fa-arrows-rotate"></i>
         <span>初期化</span>
@@ -1219,6 +1229,41 @@
     function rgbToHex(r, g, b) {
       return "#" + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
     }
+
+    // メモリ保存・読み出しイベント
+    document.getElementById('saveMemoryBtn').addEventListener('click', async () => {
+      if (!originalImage) {
+        AppMemory.showToast('保存する画像データがありません', 'warning');
+        return;
+      }
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = canvas.width;
+      exportCanvas.height = canvas.height;
+      const exportCtx = exportCanvas.getContext('2d');
+      const cleanData = generateProcessedImageData();
+      exportCtx.putImageData(cleanData, 0, 0);
+
+      await AppMemory.save(exportCanvas, { filename: 'transparent_image.png' });
+    });
+
+    document.getElementById('loadMemoryBtn').addEventListener('click', async () => {
+      if (!(await AppMemory.hasData())) {
+        AppMemory.showToast('メモリに保存された画像データがありません', 'warning');
+        return;
+      }
+
+      if (originalImage) {
+        if (!confirm('既存のデータが消えてしまいますが、よろしいですか？')) {
+          return;
+        }
+      }
+
+      const file = await AppMemory.loadAsFile('memory_transparent_image.png');
+      if (file) {
+        loadImage(file);
+        AppMemory.showToast('メモリから画像を読み出しました', 'info');
+      }
+    });
   </script>
 </body>
 </html>

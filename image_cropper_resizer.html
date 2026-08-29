@@ -8,6 +8,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Shared Memory Transfer Module -->
+  <script src="memory_transfer.js"></script>
   <style>
     /* Custom scrollbar & canvas styles */
     ::-webkit-scrollbar {
@@ -64,6 +66,14 @@
 
     <!-- Top Action Buttons -->
     <div class="flex items-center space-x-2">
+      <button id="saveMemoryBtn" onclick="saveToAppMemory()" class="px-3 py-1.5 bg-indigo-700/70 hover:bg-indigo-600 active:bg-indigo-800 text-indigo-100 text-xs font-medium rounded-lg transition flex items-center space-x-1.5 border border-indigo-500/60 shadow-sm" title="現在のクロップ画像・編集結果をメモリに保存します">
+        <i class="fa-solid fa-floppy-disk text-indigo-300"></i>
+        <span>メモリに保存</span>
+      </button>
+      <button id="loadMemoryBtn" onclick="loadFromAppMemory()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 text-xs font-medium rounded-lg transition flex items-center space-x-1.5 border border-slate-600 shadow-sm" title="メモリから画像を読み出します">
+        <i class="fa-solid fa-arrow-up-from-bracket text-slate-300"></i>
+        <span>メモリから読み出し</span>
+      </button>
       <label class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 text-xs font-medium rounded-lg cursor-pointer transition flex items-center space-x-2 border border-slate-600">
         <i class="fa-solid fa-folder-open"></i>
         <span>画像を開く</span>
@@ -1179,6 +1189,60 @@
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+    }
+
+    /**
+     * 共通メモリへの保存・読み出し処理
+     */
+    async function saveToAppMemory() {
+      if (!state.originalImage) {
+        AppMemory.showToast('保存する画像データがありません', 'warning');
+        return;
+      }
+      
+      let targetW, targetH;
+      if (state.keepOriginalSize) {
+        targetW = Math.round(state.cropBox.w);
+        targetH = Math.round(state.cropBox.h);
+      } else {
+        targetW = state.outWidth;
+        targetH = state.outHeight;
+      }
+
+      const outCanvas = document.createElement('canvas');
+      outCanvas.width = targetW;
+      outCanvas.height = targetH;
+      const outCtx = outCanvas.getContext('2d');
+      outCtx.imageSmoothingEnabled = true;
+      outCtx.imageSmoothingQuality = 'high';
+
+      const cb = state.cropBox;
+      outCtx.drawImage(
+        state.transformedCanvas,
+        cb.x, cb.y, cb.w, cb.h,
+        0, 0, targetW, targetH
+      );
+
+      await AppMemory.save(outCanvas, { filename: state.fileName });
+    }
+
+    async function loadFromAppMemory() {
+      if (!(await AppMemory.hasData())) {
+        AppMemory.showToast('メモリに保存された画像データがありません', 'warning');
+        return;
+      }
+
+      if (state.originalImage) {
+        if (!confirm('既存のデータが消えてしまいますが、よろしいですか？')) {
+          return;
+        }
+      }
+
+      const file = await AppMemory.loadAsFile('memory_cropped_image.png');
+      if (file) {
+        loadImageFile(file);
+        AppMemory.showToast('メモリから画像を読み出しました', 'info');
+      }
     }
   </script>
 </body>

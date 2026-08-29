@@ -7,6 +7,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Shared Memory Transfer Module -->
+  <script src="memory_transfer.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
     body {
@@ -54,9 +56,19 @@
         </div>
       </div>
       
-      <div id="statusBadge" class="hidden sm:flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-slate-700/50 border border-slate-600/50 text-slate-300">
-        <span class="w-2 h-2 rounded-full bg-slate-500" id="statusDot"></span>
-        <span id="statusText">画像未読み込み</span>
+      <div class="flex items-center gap-2">
+        <button id="btnSaveMemory" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-medium text-xs rounded-lg shadow-sm border border-indigo-400/40 transition flex items-center gap-1.5" title="現在の元画像をメモリに保存します">
+          <i data-lucide="hard-drive-download" class="w-4 h-4"></i>
+          <span>メモリに保存</span>
+        </button>
+        <button id="btnLoadMemory" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 font-medium text-xs rounded-lg shadow-sm border border-slate-600 transition flex items-center gap-1.5" title="メモリから画像を読み出します">
+          <i data-lucide="hard-drive-upload" class="w-4 h-4"></i>
+          <span>メモリから読み出し</span>
+        </button>
+        <div id="statusBadge" class="hidden sm:flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-slate-700/50 border border-slate-600/50 text-slate-300">
+          <span class="w-2 h-2 rounded-full bg-slate-500" id="statusDot"></span>
+          <span id="statusText">画像未読み込み</span>
+        </div>
       </div>
     </div>
   </header>
@@ -801,6 +813,34 @@
         setTimeout(() => toast.remove(), 300);
       }, 3000);
     }
+
+    // 共通メモリへの保存・読み出し処理
+    document.getElementById('btnSaveMemory').addEventListener('click', async () => {
+      if (!state.image) {
+        AppMemory.showToast('保存する画像データがありません', 'warning');
+        return;
+      }
+      await AppMemory.save(state.image, { filename: state.filename || 'tile_source.png' });
+    });
+
+    document.getElementById('btnLoadMemory').addEventListener('click', async () => {
+      if (!(await AppMemory.hasData())) {
+        AppMemory.showToast('メモリに保存された画像データがありません', 'warning');
+        return;
+      }
+
+      if (state.image) {
+        if (!confirm('既存のデータが消えてしまいますが、よろしいですか？')) {
+          return;
+        }
+      }
+
+      const file = await AppMemory.loadAsFile('memory_tile_source.png');
+      if (file) {
+        handleFile(file);
+        AppMemory.showToast('メモリから画像を読み出しました', 'info');
+      }
+    });
   </script>
 </body>
 </html>

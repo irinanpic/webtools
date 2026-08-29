@@ -8,6 +8,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Shared Memory Transfer Module -->
+  <script src="memory_transfer.js"></script>
   <!-- Inter Font -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
   <style>
@@ -67,6 +69,17 @@
 
     <!-- Actions & File Export Header -->
     <div class="flex items-center space-x-2">
+      <button id="btnSaveMemory" class="px-3 py-1.5 bg-indigo-700/70 hover:bg-indigo-600 active:bg-indigo-800 text-indigo-100 border border-indigo-500/60 rounded-lg transition text-xs font-medium flex items-center space-x-1.5 shadow-sm" title="畳み込み処理結果画像をメモリに保存します">
+        <i class="fa-solid fa-floppy-disk text-indigo-300"></i>
+        <span>メモリに保存</span>
+      </button>
+      <button id="btnLoadMemory" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 border border-slate-600 rounded-lg transition text-xs font-medium flex items-center space-x-1.5 shadow-sm" title="メモリから画像を読み出します">
+        <i class="fa-solid fa-arrow-up-from-bracket text-slate-300"></i>
+        <span>メモリから読み出し</span>
+      </button>
+
+      <div class="h-4 w-px bg-slate-700 mx-1"></div>
+
       <!-- Undo / Redo -->
       <button id="btnUndo" disabled class="p-2 bg-slate-700/50 hover:bg-slate-700 disabled:opacity-40 text-slate-200 rounded-lg transition text-xs flex items-center space-x-1" title="元に戻す (Ctrl+Z)">
         <i class="fa-solid fa-rotate-left"></i>
@@ -869,6 +882,34 @@
 
           setTimeout(() => URL.revokeObjectURL(url), 1000);
         }, format, 0.92);
+      });
+
+      // 共通メモリへの保存・読み出し処理
+      document.getElementById('btnSaveMemory').addEventListener('click', async () => {
+        if (!state.imageLoaded) {
+          AppMemory.showToast('保存する画像データがありません', 'warning');
+          return;
+        }
+        await AppMemory.save(elements.imageCanvas, { filename: 'convolution_result.png' });
+      });
+
+      document.getElementById('btnLoadMemory').addEventListener('click', async () => {
+        if (!(await AppMemory.hasData())) {
+          AppMemory.showToast('メモリに保存された画像データがありません', 'warning');
+          return;
+        }
+
+        if (state.imageLoaded) {
+          if (!confirm('既存のデータが消えてしまいますが、よろしいですか？')) {
+            return;
+          }
+        }
+
+        const file = await AppMemory.loadAsFile('memory_convolution.png');
+        if (file) {
+          loadImageFromFile(file);
+          AppMemory.showToast('メモリから画像を読み出しました', 'info');
+        }
       });
     }
 

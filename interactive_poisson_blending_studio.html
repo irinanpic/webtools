@@ -9,6 +9,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Shared Memory Transfer Module -->
+  <script src="memory_transfer.js"></script>
 
   <style>
     ::-webkit-scrollbar {
@@ -56,6 +58,14 @@
 
     <!-- Right Control Action Buttons -->
     <div class="flex items-center space-x-2">
+      <button id="saveMemoryBtn" class="px-3 py-1.5 bg-indigo-700/70 hover:bg-indigo-600 active:bg-indigo-800 text-indigo-100 text-xs font-medium rounded-lg transition border border-indigo-500/60 shadow-sm flex items-center space-x-1.5" title="現在のキャンバス画像をメモリに保存します">
+        <i class="fa-solid fa-floppy-disk text-indigo-300"></i>
+        <span>メモリに保存</span>
+      </button>
+      <button id="loadMemoryBtn" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 text-xs font-medium rounded-lg transition border border-slate-600 shadow-sm flex items-center space-x-1.5" title="メモリからベース画像(画像A)として読み出します">
+        <i class="fa-solid fa-arrow-up-from-bracket text-slate-300"></i>
+        <span>メモリから読み出し</span>
+      </button>
       <button id="btnResetTransformHeader" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs font-medium rounded-lg transition border border-slate-600 flex items-center space-x-1.5">
         <i class="fa-solid fa-arrows-rotate"></i>
         <span>位置リセット</span>
@@ -714,6 +724,34 @@
 
     downloadPngBtn.addEventListener('click', () => exportImage('image/png', 'poisson_blended.png'));
     downloadWebpBtn.addEventListener('click', () => exportImage('image/webp', 'poisson_blended.webp'));
+
+    // 共通メモリへの保存・読み出し処理
+    document.getElementById('saveMemoryBtn').addEventListener('click', async () => {
+      if (!state.imgA) {
+        AppMemory.showToast('保存する画像データがありません', 'warning');
+        return;
+      }
+      await AppMemory.save(canvas, { filename: 'poisson_blended.png' });
+    });
+
+    document.getElementById('loadMemoryBtn').addEventListener('click', async () => {
+      if (!(await AppMemory.hasData())) {
+        AppMemory.showToast('メモリに保存された画像データがありません', 'warning');
+        return;
+      }
+
+      if (state.imgA || state.imgB) {
+        if (!confirm('既存のデータが消えてしまいますが、よろしいですか？')) {
+          return;
+        }
+      }
+
+      const file = await AppMemory.loadAsFile('memory_blend_base.png');
+      if (file) {
+        loadFileAsImage(file, 'A');
+        AppMemory.showToast('メモリからベース画像として読み出しました', 'info');
+      }
+    });
   </script>
 </body>
 </html>

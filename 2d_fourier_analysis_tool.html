@@ -8,6 +8,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Shared Memory Transfer Module -->
+    <script src="memory_transfer.js"></script>
     <style>
         body {
             font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -45,6 +47,13 @@
 
         <!-- History Controls in Header -->
         <div class="flex items-center space-x-2">
+            <button id="btn-save-memory" class="px-3 py-1.5 bg-indigo-700/70 hover:bg-indigo-600 active:bg-indigo-800 text-indigo-100 text-xs font-medium rounded-md transition border border-indigo-500/60 shadow-sm flex items-center gap-1.5" title="現在表示中のキャンバス画像をメモリに保存します">
+                <i class="fa-solid fa-floppy-disk text-indigo-300"></i> メモリに保存
+            </button>
+            <button id="btn-load-memory" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 active:bg-slate-800 text-slate-200 text-xs font-medium rounded-md transition border border-slate-600 shadow-sm flex items-center gap-1.5" title="メモリから画像を読み出します">
+                <i class="fa-solid fa-arrow-up-from-bracket text-slate-300"></i> メモリから読み出し
+            </button>
+            <div class="h-4 w-px bg-slate-700 mx-1"></div>
             <button id="btn-undo" disabled class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium rounded-md transition border border-slate-600 flex items-center gap-1.5 text-slate-200">
                 <i class="fa-solid fa-rotate-left"></i> 元に戻す
             </button>
@@ -1091,6 +1100,35 @@
 
                 showToast(`${filename} をローカルにダウンロード保存しました`, "success");
             }, mimeType, 0.95);
+        });
+
+        // 共通メモリへの保存・読み出し処理
+        document.getElementById('btn-save-memory').addEventListener('click', async () => {
+            if (!state.loadedImage) {
+                AppMemory.showToast('保存する画像データがありません', 'warning');
+                return;
+            }
+            const currentCanvas = state.activeTab === 'image' ? canvasSpatial : canvasFreq;
+            await AppMemory.save(currentCanvas, { filename: 'fft_image.png' });
+        });
+
+        document.getElementById('btn-load-memory').addEventListener('click', async () => {
+            if (!(await AppMemory.hasData())) {
+                AppMemory.showToast('メモリに保存された画像データがありません', 'warning');
+                return;
+            }
+
+            if (state.loadedImage) {
+                if (!confirm('既存のデータが消えてしまいますが、よろしいですか？')) {
+                    return;
+                }
+            }
+
+            const file = await AppMemory.loadAsFile('memory_fft_image.png');
+            if (file) {
+                loadImageFromFile(file);
+                AppMemory.showToast('メモリから画像を読み出しました', 'info');
+            }
         });
     </script>
 </body>

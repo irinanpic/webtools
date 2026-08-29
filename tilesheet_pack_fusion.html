@@ -39,6 +39,8 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- JSZip -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- Shared Memory Transfer Module -->
+  <script src="memory_transfer.js"></script>
 
   <style>
     /* 透過背景のチェッカーボード模様 */
@@ -112,7 +114,15 @@
     </div>
 
     <!-- アクションボタン -->
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-2">
+      <button id="btn-save-memory" class="px-3 py-1.5 bg-brand-600/80 hover:bg-brand-500 active:bg-brand-700 text-white font-medium text-xs rounded-lg shadow-sm border border-brand-400/40 transition flex items-center gap-1.5" title="現在の合成タイルシート画像をメモリに保存します">
+        <i data-lucide="hard-drive-download" class="w-4 h-4"></i>
+        メモリに保存
+      </button>
+      <button id="btn-load-memory" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 font-medium text-xs rounded-lg shadow-sm border border-slate-700 transition flex items-center gap-1.5" title="メモリから画像を読み出します">
+        <i data-lucide="hard-drive-upload" class="w-4 h-4"></i>
+        メモリから読み出し
+      </button>
       <button id="btn-clear-all" class="px-3 py-1.5 text-xs text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition border border-transparent hover:border-rose-500/20 flex items-center gap-1.5">
         <i data-lucide="trash-2" class="w-4 h-4"></i>
         すべて削除
@@ -1156,6 +1166,37 @@ function drawTile(ctx, key, mapData, destX, destY) {
         }[match];
       });
     }
+
+    // 共通メモリへの保存・読み出し処理
+    document.getElementById('btn-save-memory').addEventListener('click', async () => {
+      if (state.images.length === 0) {
+        AppMemory.showToast('保存する画像データがありません', 'warning');
+        return;
+      }
+      renderAtlas();
+      await AppMemory.save(atlasCanvas, { filename: 'tilesheet.png' });
+    });
+
+    document.getElementById('btn-load-memory').addEventListener('click', async () => {
+      if (!(await AppMemory.hasData())) {
+        AppMemory.showToast('メモリに保存された画像データがありません', 'warning');
+        return;
+      }
+
+      if (state.images.length > 0) {
+        if (!confirm('既存のデータが消えてしまいますが、よろしいですか？')) {
+          return;
+        }
+      }
+
+      const file = await AppMemory.loadAsFile('memory_tilesheet.png');
+      if (file) {
+        state.images = [];
+        state.selectedImgId = null;
+        addImages([file]);
+        AppMemory.showToast('メモリから画像を読み出しました', 'info');
+      }
+    });
   </script>
 </body>
 </html>
